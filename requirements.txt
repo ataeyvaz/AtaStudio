@@ -1,0 +1,8 @@
+PyQt6>=6.4.0
+yt-dlp>=2026.3.17
+curl_cffi>=0.10.0,<0.15
+mutagen>=1.47.0
+requests>=2.33.0
+websockets>=14.0
+certifi>=2024.2.2
+audio-separator>=0.17.0
