@@ -100,6 +100,15 @@ CHANNELS = [
     {"name": "Sub Bass",    "program": 43,  "min": 0,  "max": 27},
 ]
 
+# Stem ayrıştırma modelleri  (görünen ad, model_filename)
+SEP_MODELS = [
+    ("⚡ Hızlı — MDX-NET Inst HQ3",          "UVR-MDX-NET-Inst_HQ_3.onnx"),
+    ("⚖ Dengeli — UVR-MDX-NET-Inst_Main",    "UVR-MDX-NET-Inst_Main.onnx"),
+    ("🎯 Kaliteli — htdemucs_ft (Demucs)",   "htdemucs_ft"),
+    ("💎 En İyi — BS-Roformer-1297 (Ağır)",  "model_bs_roformer_ep_317_sdr_12.9755.ckpt"),
+]
+DEFAULT_SEP_MODEL = "UVR-MDX-NET-Inst_HQ_3.onnx"
+
 # Renk paleti
 NAV  = "#0A0A0A"
 GOLD = "#FFFFFF"
@@ -141,7 +150,7 @@ QPushButton:disabled {{
 /* --- Gold buton (siyah/beyaz tema) --- */
 QPushButton[role="gold"] {{
     background: #1A1A1A;
-    color: white;
+    color: #111111;
     border: 1px solid #444;
     border-radius: 4px;
     padding: 7px 18px;
@@ -157,7 +166,7 @@ QPushButton[role="gold"]:disabled {{
 /* --- Kırmızı buton --- */
 QPushButton[role="red"] {{
     background: {ERR};
-    color: white;
+    color: #111111;
     border: none;
     border-radius: 4px;
     padding: 6px 14px;
@@ -169,7 +178,7 @@ QPushButton[role="red"]:hover {{
 /* --- Navy buton --- */
 QPushButton[role="navy"] {{
     background: {NAV};
-    color: white;
+    color: #111111;
     border: none;
     border-radius: 4px;
     padding: 6px 14px;
@@ -189,7 +198,7 @@ QPushButton[role="platform"] {{
 }}
 QPushButton[role="platform"]:hover {{
     background: #1A1A1A;
-    color: white;
+    color: #111111;
     border-color: #1A1A1A;
 }}
 /* --- Tab butonları --- */
@@ -372,7 +381,7 @@ def _find_separator_exe():
         "Lütfen çalıştırın: pip install audio-separator")
 
 
-def _run_separator(input_path, tmp_dir, log_cb):
+def _run_separator(input_path, tmp_dir, log_cb, model=None):
     """
     audio-separator CLI ile Vocals + Instrumental ayır.
     Subprocess olarak çalışır → numpy/TF çakışması olmaz.
@@ -386,8 +395,8 @@ def _run_separator(input_path, tmp_dir, log_cb):
     safe_path = os.path.join(tmp_dir, "ata_track.wav")
     shutil.copy2(input_path, safe_path)
 
-    # Model: Kim Jeong-yeop Roformer — Vocals/Instrumental, CPU'da hızlı
-    model = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
+    if not model:
+        model = DEFAULT_SEP_MODEL
 
     cmd = [
         exe,
@@ -451,7 +460,12 @@ def _run_separator(input_path, tmp_dir, log_cb):
 
 def _predict_stem(wav_path, onset, log_cb, stem_name):
     """Basic Pitch ile tek stem → nota listesi."""
-    from basic_pitch.inference import predict
+    try:
+        from basic_pitch.inference import predict
+    except ImportError:
+        raise RuntimeError(
+            "basic-pitch yüklü değil veya backend eksik.\n"
+            "Çözüm: pip install basic-pitch onnxruntime")
     log_cb(f"  🎵 Basic Pitch → {stem_name}...")
     _, midi_data, _ = predict(
         wav_path,
@@ -469,7 +483,7 @@ def _predict_stem(wav_path, onset, log_cb, stem_name):
 
 
 def convert_file(input_path, out_dirs, bpm, onset, make_xml, make_pdf,
-                 progress_cb, log_cb):
+                 progress_cb, log_cb, sep_model=None):
     import pretty_midi
 
     base     = _sanitize(os.path.splitext(os.path.basename(input_path))[0])
@@ -486,7 +500,7 @@ def convert_file(input_path, out_dirs, bpm, onset, make_xml, make_pdf,
         # ── 1. audio-separator stem ayrıştırma ──────────────────────────────
         progress_cb(8, "audio-separator: ses katmanları ayrıştırılıyor...")
         try:
-            stems = _run_separator(input_path, tmp, log_cb)
+            stems = _run_separator(input_path, tmp, log_cb, sep_model)
         except Exception as e:
             log_cb(f"  ❌ audio-separator başarısız: {e}")
             log_cb("  ⚠ Fallback: tek kanal moduna geçiliyor...")
@@ -550,7 +564,12 @@ def convert_file(input_path, out_dirs, bpm, onset, make_xml, make_pdf,
         else:
             # ── 2b. Fallback: eski tek-kanal mod ──────────────────────────
             progress_cb(25, "Basic Pitch analizi (fallback)...")
-            from basic_pitch.inference import predict
+            try:
+                from basic_pitch.inference import predict
+            except ImportError:
+                raise RuntimeError(
+                    "basic-pitch yüklü değil veya backend eksik.\n"
+                    "Çözüm: pip install basic-pitch onnxruntime")
             _, midi_data, _ = predict(
                 input_path,
                 onset_threshold=float(onset),
@@ -846,7 +865,8 @@ class ConvertWorker(QThread):
     done     = pyqtSignal(str, str, str, int, int)  # mid, xml, pdf, ic, tn
     error    = pyqtSignal(str)
 
-    def __init__(self, input_path, out_dirs, bpm, onset, make_xml, make_pdf):
+    def __init__(self, input_path, out_dirs, bpm, onset, make_xml, make_pdf,
+                 sep_model=None):
         super().__init__()
         self.input_path = input_path
         self.out_dirs   = out_dirs
@@ -854,6 +874,7 @@ class ConvertWorker(QThread):
         self.onset      = onset
         self.make_xml   = make_xml
         self.make_pdf   = make_pdf
+        self.sep_model  = sep_model or DEFAULT_SEP_MODEL
 
     def run(self):
         try:
@@ -862,6 +883,7 @@ class ConvertWorker(QThread):
                 self.bpm, self.onset, self.make_xml, self.make_pdf,
                 lambda p, s: self.progress.emit(p, s),
                 lambda m: (self.log.emit(m), print(m)),
+                self.sep_model,
             )
             print(f"[ConvertWorker] done → mid={mid!r} xml={xml!r} pdf={pdf!r} ic={ic} tn={tn}")
             self.done.emit(mid or "", xml or "", pdf or "", ic, tn)
@@ -1271,6 +1293,34 @@ class ConvertTab(QWidget):
         flay.addLayout(onset_row)
 
         flay.addWidget(_h_line())
+        flay.addWidget(_label("Stem Ayrıştırma Modeli", size=9, color=TLT))
+        self.model_combo = QComboBox()
+        cfg_model = load_config().get("sep_model", DEFAULT_SEP_MODEL)
+        for label, fname in SEP_MODELS:
+            self.model_combo.addItem(label, userData=fname)
+        # Config'den kayıtlı modeli seç
+        for i, (_, fname) in enumerate(SEP_MODELS):
+            if fname == cfg_model:
+                self.model_combo.setCurrentIndex(i)
+                break
+        flay.addWidget(self.model_combo)
+
+        self.demucs_warn = _label(
+            "⚠ GPU olmadan yavaş olabilir", size=8, color="#B8860B")
+        self.demucs_warn.setVisible(
+            "htdemucs" in cfg_model.lower())
+        flay.addWidget(self.demucs_warn)
+
+        def _on_model_changed(idx):
+            fname = self.model_combo.currentData()
+            cfg = load_config()
+            cfg["sep_model"] = fname
+            save_config(cfg)
+            self.demucs_warn.setVisible("htdemucs" in fname.lower())
+
+        self.model_combo.currentIndexChanged.connect(_on_model_changed)
+
+        flay.addWidget(_h_line())
         flay.addWidget(_label("UVR/MDX-Net Stem → GM Enstrüman",
                                size=8, bold=True, color=NAV))
         for stem, emoji, gm in [
@@ -1339,19 +1389,48 @@ class ConvertTab(QWidget):
         if not dirs:
             QMessageBox.warning(self, "Uyarı", "Lütfen önce kurulumu tamamlayın.")
             return
-        bpm      = self.bpm_slider.value()
-        onset    = self.onset_slider.value() / 100
-        make_xml = self.xml_check.isChecked()
-        make_pdf = self.pdf_check.isChecked()
+        # Lazy dep check: numpy + basic-pitch (sadece script modunda)
+        if not getattr(sys, "frozen", False):
+            try:
+                import numpy               # noqa: F401
+                from basic_pitch.inference import predict  # noqa: F401
+            except (ImportError, Exception):
+                self.status_msg.emit("Yükleniyor: basic-pitch, onnxruntime...")
+                self.log_box.append("⏳ basic-pitch ve onnxruntime yükleniyor, lütfen bekleyin...")
+                QApplication.processEvents()
+                try:
+                    subprocess.check_call(
+                        [sys.executable, "-m", "pip", "install",
+                         "basic-pitch", "--no-deps", "-q"],
+                        timeout=120)
+                    subprocess.check_call(
+                        [sys.executable, "-m", "pip", "install",
+                         "onnxruntime", "resampy<0.4.3",
+                         "mir_eval", "pretty_midi", "librosa", "-q"],
+                        timeout=300)
+                    self.log_box.append("✅ Bağımlılıklar yüklendi, dönüştürme başlatılıyor...")
+                except Exception as e:
+                    self.status_msg.emit("Yükleme başarısız")
+                    QMessageBox.critical(
+                        self, "Yükleme Hatası",
+                        f"MIDI dönüştürme için gerekli paketler yüklenemedi:\n{e}\n\n"
+                        "Elle yüklemek için:\n"
+                        "pip install basic-pitch onnxruntime")
+                    return
+        bpm       = self.bpm_slider.value()
+        onset     = self.onset_slider.value() / 100
+        make_xml  = self.xml_check.isChecked()
+        make_pdf  = self.pdf_check.isChecked()
+        sep_model = self.model_combo.currentData()
         for row in range(self.table.rowCount()):
             item = self.table.item(row, _C_STATUS)
             if item and item.text() in ("Bekliyor", "—"):
                 path = self.table.item(row, _C_NAME).data(Qt.ItemDataRole.UserRole)
-                self._run_row(row, path, dirs, bpm, onset, make_xml, make_pdf)
+                self._run_row(row, path, dirs, bpm, onset, make_xml, make_pdf, sep_model)
 
-    def _run_row(self, row, path, dirs, bpm, onset, make_xml, make_pdf):
+    def _run_row(self, row, path, dirs, bpm, onset, make_xml, make_pdf, sep_model=None):
         self.table.item(row, _C_STATUS).setText("⏳ İşleniyor...")
-        w = ConvertWorker(path, dirs, bpm, onset, make_xml, make_pdf)
+        w = ConvertWorker(path, dirs, bpm, onset, make_xml, make_pdf, sep_model)
         self.workers.append(w)
 
         def on_progress(pct, msg):
