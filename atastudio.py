@@ -1998,6 +1998,11 @@ class FloatingRecButton(QWidget):
                 QMessageBox.warning(self, "Hata", "Loopback cihazı bulunamadı.")
                 return
 
+            dlg = RecordStartDialog(None)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            rec_name, max_secs = dlg.get_values()
+
             main = self._main_window()
             dirs = main._get_dirs() if main else {}
 
@@ -2009,7 +2014,9 @@ class FloatingRecButton(QWidget):
                 pass
             rec_fmt = cfg.get("rec_format", "MP3")
 
-            self._worker = RecordWorker(dev_index, dev_info, rec_fmt, dirs)
+            self._worker = RecordWorker(
+                dev_index, dev_info, rec_fmt, dirs,
+                filename=rec_name, max_seconds=max_secs)
             self._worker.done.connect(self._on_done)
             self._worker.error.connect(self._on_error)
             self._worker.start()
@@ -2099,18 +2106,22 @@ class FloatingRecButton(QWidget):
 
 # ── Kayıt Sekmesi ─────────────────────────────────────────────────────────────
 class RecordWorker(QThread):
-    status = pyqtSignal(str)
-    done   = pyqtSignal(str)
-    error  = pyqtSignal(str)
+    status            = pyqtSignal(str)
+    done              = pyqtSignal(str)
+    error             = pyqtSignal(str)
+    recording_stopped = pyqtSignal()   # kayıt bitti, dönüşüm başlıyor
 
-    def __init__(self, dev_index, dev_info, fmt, out_dirs):
+    def __init__(self, dev_index, dev_info, fmt, out_dirs,
+                 filename=None, max_seconds=0):
         super().__init__()
-        self.dev_index = dev_index
-        self.dev_info  = dev_info
-        self.fmt       = fmt
-        self.out_dirs  = out_dirs
-        self._running  = False
-        self._frames   = []
+        self.dev_index   = dev_index
+        self.dev_info    = dev_info
+        self.fmt         = fmt
+        self.out_dirs    = out_dirs
+        self.filename    = filename
+        self.max_seconds = max_seconds
+        self._running    = False
+        self._frames     = []
 
     def run(self):
         try:
@@ -2129,19 +2140,22 @@ class RecordWorker(QThread):
             )
             self._running = True
             self._frames  = []
+            chunk = 512
             while self._running:
-                self._frames.append(stream.read(512, exception_on_overflow=False))
+                self._frames.append(stream.read(chunk, exception_on_overflow=False))
             stream.stop_stream()
             stream.close()
             pa.terminate()
+            self.recording_stopped.emit()   # UI timer'ı durdur
             if not self._frames:
                 self.error.emit("Kayıt verisi yok.")
                 return
             save_dir = self.out_dirs.get("wav", os.path.join(
                 os.path.expanduser("~"), "Documents", "Ata Studio", "wav"))
             os.makedirs(save_dir, exist_ok=True)
-            ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            wav_path = os.path.join(save_dir, f"kayit_{ts}.wav")
+            ts        = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            base_name = self.filename if self.filename else f"kayit_{ts}"
+            wav_path  = os.path.join(save_dir, f"{base_name}.wav")
             with wave.open(wav_path, "wb") as wf:
                 wf.setnchannels(ch)
                 wf.setsampwidth(2)
@@ -2150,15 +2164,37 @@ class RecordWorker(QThread):
             final = wav_path
             if self.fmt == "MP3":
                 try:
-                    from pydub import AudioSegment
                     mp3_dir  = self.out_dirs.get("mp3", save_dir)
                     os.makedirs(mp3_dir, exist_ok=True)
-                    mp3_path = os.path.join(mp3_dir, f"kayit_{ts}.mp3")
-                    AudioSegment.from_wav(wav_path).export(mp3_path, format="mp3")
-                    os.remove(wav_path)
-                    final = mp3_path
+                    mp3_path = os.path.join(mp3_dir, f"{base_name}.mp3")
+                    # ffmpeg direkt subprocess ile çağır — pydub'a gerek yok
+                    ffmpeg_candidates = [
+                        os.path.join(os.path.dirname(sys.executable), "..", "..", "ffmpeg.exe"),
+                        os.path.join(os.path.expanduser("~"), "Desktop", "convert", "ffmpeg.exe"),
+                        r"C:\Users\Ata\Desktop\convert\ffmpeg.exe",
+                        "ffmpeg",
+                    ]
+                    ffmpeg_exe = "ffmpeg"
+                    for candidate in ffmpeg_candidates:
+                        if os.path.exists(candidate):
+                            ffmpeg_exe = candidate
+                            break
+                    result = subprocess.run(
+                        [ffmpeg_exe, "-y", "-i", wav_path,
+                         "-codec:a", "libmp3lame", "-q:a", "2",
+                         mp3_path],
+                        capture_output=True,
+                        timeout=120,
+                    )
+                    if result.returncode == 0 and os.path.exists(mp3_path):
+                        os.remove(wav_path)
+                        final = mp3_path
+                    else:
+                        self.status.emit("MP3 dönüşümü başarısız, WAV kaydedildi")
+                except subprocess.TimeoutExpired:
+                    self.status.emit("MP3 dönüşümü zaman aşımı, WAV kaydedildi")
                 except Exception as e:
-                    self.status.emit(f"MP3 dönüşümü başarısız, WAV kaydedildi ({e})")
+                    self.status.emit(f"MP3 dönüşümü başarısız: {e}")
             self.done.emit(final)
         except Exception as e:
             self.error.emit(str(e))
@@ -2247,17 +2283,17 @@ class RecordTab(QWidget):
         rlay.setContentsMargins(18, 18, 18, 18)
         rlay.setSpacing(8)
         rlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.time_lbl = QLabel("00:00")
-        self.time_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.time_lbl.setStyleSheet(
+        _time_lbl = QLabel("00:00")
+        _time_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        _time_lbl.setStyleSheet(
             f"color:{ERR}; font-size:36pt; font-weight:bold; "
             f"font-family:'Courier New'; background:transparent;")
-        rlay.addWidget(self.time_lbl)
-        self.rec_dot = QLabel("⏸  Kayıt Bekliyor")
-        self.rec_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.rec_dot.setStyleSheet(
+        rlay.addWidget(_time_lbl)
+        _rec_dot = QLabel("⏸  Kayıt Bekliyor")
+        _rec_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        _rec_dot.setStyleSheet(
             f"color:{TLT}; font-size:10pt; background:transparent;")
-        rlay.addWidget(self.rec_dot)
+        rlay.addWidget(_rec_dot)
         vlay.addWidget(rec_panel)
         info_panel = _panel_frame()
         ilay = QVBoxLayout(info_panel)
@@ -2388,9 +2424,17 @@ class RecordTab(QWidget):
         if name not in self._dev_map:
             return
         dev_index, dev_info = self._dev_map[name]
+        dlg = RecordStartDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        rec_name, max_secs = dlg.get_values()
+        self._max_secs = max_secs
         fmt = "MP3" if self.fmt_group.checkedId() == 1 else "WAV"
-        self._worker = RecordWorker(dev_index, dev_info, fmt, self.get_dirs())
+        self._worker = RecordWorker(
+            dev_index, dev_info, fmt, self.get_dirs(),
+            filename=rec_name, max_seconds=max_secs)
         self._worker.status.connect(self._on_status)
+        self._worker.recording_stopped.connect(self._on_recording_stopped)
         self._worker.done.connect(self._on_done)
         self._worker.error.connect(self._on_error)
         self._worker.start()
@@ -2415,10 +2459,20 @@ class RecordTab(QWidget):
         self._elapsed += 1
         m, s = divmod(self._elapsed, 60)
         self.time_lbl.setText(f"{m:02d}:{s:02d}")
+        # Süre dolunca otomatik durdur
+        if self._max_secs > 0 and self._elapsed >= self._max_secs:
+            self._stop_rec()
 
     def _on_status(self, msg):
         self.rec_status.setText(msg)
         self.status_msg.emit(msg)
+
+    def _on_recording_stopped(self):
+        """Kayıt durdu, MP3 dönüşümü başlıyor — timer durdur."""
+        self._timer.stop()
+        self.rec_dot.setText("⏳  MP3 dönüştürülüyor...")
+        self.rec_dot.setStyleSheet(
+            f"color:{TMID}; font-size:10pt; background:transparent;")
 
     def _on_done(self, path):
         self.start_btn.setEnabled(True)
@@ -2659,6 +2713,10 @@ class LiveStreamTab(QWidget):
                     "Loopback cihazı bulunamadı.\n"
                     "Ses çıkışının aktif olduğundan emin olun.")
                 return
+            dlg = RecordStartDialog(self)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            rec_name, max_secs = dlg.get_values()
             cfg = {}
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as _f:
@@ -2667,7 +2725,8 @@ class LiveStreamTab(QWidget):
                 pass
             rec_fmt = cfg.get("rec_format", "MP3")
             self._rec_worker = RecordWorker(
-                dev_index, dev_info, rec_fmt, self.get_dirs())
+                dev_index, dev_info, rec_fmt, self.get_dirs(),
+                filename=rec_name, max_seconds=max_secs)
             self._rec_worker.done.connect(self._on_rec_done)
             self._rec_worker.error.connect(self._on_rec_error)
             self._rec_worker.start()
