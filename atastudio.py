@@ -60,6 +60,8 @@ def _ensure_deps():
 
 _ensure_deps()
 
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings, QWebEnginePage
 from PyQt6.QtCore import (Qt, QThread, pyqtSignal, QUrl, QSize, QTimer)
 from PyQt6.QtGui  import (QFont, QColor, QPalette, QIcon)
 from PyQt6.QtWidgets import (
@@ -70,7 +72,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QRadioButton, QButtonGroup,
     QSplitter, QTextEdit, QSizePolicy, QSpacerItem,
-    QMessageBox, QToolButton,
+    QMessageBox, QToolButton, QSystemTrayIcon, QMenu,
 )
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
@@ -1019,6 +1021,145 @@ class DownloadDoneDialog(QDialog):
             subprocess.Popen(["xdg-open", folder])
 
 
+# ── Kayıt Başlatma Dialogu ────────────────────────────────────────────────────
+class RecordStartDialog(QDialog):
+    """Kayıt başlamadan önce dosya adı ve süre sınırı sorar."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Kayıt Ayarları")
+        self.setFixedWidth(400)
+        self.setModal(True)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 20, 24, 20)
+        lay.setSpacing(14)
+
+        lay.addWidget(_label("Kayıt Ayarları", bold=True, size=12, color=NAV))
+        lay.addWidget(_h_line())
+
+        # Dosya adı
+        lay.addWidget(_label("Dosya Adı", bold=True, size=10, color=NAV))
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("örn: suno_kayit_01  (uzantı ekleme)")
+        self.name_edit.setFixedHeight(32)
+        import datetime
+        self.name_edit.setText(
+            f"kayit_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        lay.addWidget(self.name_edit)
+
+        lay.addWidget(_h_line())
+
+        # Süre sınırı
+        lay.addWidget(_label("Kayıt Süresi", bold=True, size=10, color=NAV))
+        lay.addWidget(_label(
+            "Belirtilen süre dolunca kayıt otomatik durur. "
+            "İkisi de 0 ise sınırsız kaydeder.",
+            size=9, color=TLT))
+
+        # Saat : Dakika : Saniye
+        hms_row = QHBoxLayout()
+        hms_row.setSpacing(6)
+
+        self.hour_edit = QLineEdit("0")
+        self.hour_edit.setFixedWidth(56)
+        self.hour_edit.setFixedHeight(34)
+        self.hour_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hour_edit.setStyleSheet("font-size:14pt; font-weight:bold;")
+
+        self.min_edit = QLineEdit("0")
+        self.min_edit.setFixedWidth(56)
+        self.min_edit.setFixedHeight(34)
+        self.min_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.min_edit.setStyleSheet("font-size:14pt; font-weight:bold;")
+
+        self.sec_edit = QLineEdit("0")
+        self.sec_edit.setFixedWidth(56)
+        self.sec_edit.setFixedHeight(34)
+        self.sec_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.sec_edit.setStyleSheet("font-size:14pt; font-weight:bold;")
+
+        sep1 = _label("sa", size=9, color=TLT)
+        sep2 = _label("dk", size=9, color=TLT)
+        sep3 = _label("sn", size=9, color=TLT)
+
+        hms_row.addWidget(self.hour_edit)
+        hms_row.addWidget(sep1)
+        hms_row.addWidget(self.min_edit)
+        hms_row.addWidget(sep2)
+        hms_row.addWidget(self.sec_edit)
+        hms_row.addWidget(sep3)
+        hms_row.addStretch()
+        hms_row.addWidget(_label("0 0 0 = Sınırsız", size=8, color=TLT))
+        lay.addLayout(hms_row)
+
+        # Hızlı süre butonları
+        lay.addWidget(_label("Hızlı Seç:", size=9, color=TLT))
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(6)
+        presets = [
+            ("30sn",  0,  0, 30),
+            ("1dk",   0,  1,  0),
+            ("3dk",   0,  3,  0),
+            ("5dk",   0,  5,  0),
+            ("10dk",  0, 10,  0),
+            ("30dk",  0, 30,  0),
+            ("1sa",   1,  0,  0),
+            ("2sa",   2,  0,  0),
+        ]
+        for label, h, m, s in presets:
+            btn = QPushButton(label)
+            btn.setFixedHeight(26)
+            btn.setFixedWidth(46)
+            btn.clicked.connect(
+                lambda _, hh=h, mm=m, ss=s: self._set_time(hh, mm, ss))
+            quick_row.addWidget(btn)
+        quick_row.addStretch()
+        lay.addLayout(quick_row)
+
+        lay.addWidget(_h_line())
+
+        # Butonlar
+        btn_row = QHBoxLayout()
+        cancel_btn = QPushButton("İptal")
+        cancel_btn.setFixedHeight(36)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        self.ok_btn = QPushButton("⏺  Kaydı Başlat")
+        self.ok_btn.setFixedHeight(36)
+        self.ok_btn.setStyleSheet(
+            "background:#1A1A1A; color:white; border:none; "
+            "border-radius:4px; font-weight:bold;")
+        self.ok_btn.clicked.connect(self.accept)
+        btn_row.addWidget(self.ok_btn)
+        lay.addLayout(btn_row)
+
+    def _set_time(self, h, m, s):
+        self.hour_edit.setText(str(h))
+        self.min_edit.setText(str(m))
+        self.sec_edit.setText(str(s))
+
+    def get_values(self):
+        """(dosya_adi, sure_saniye) döndür. Sure 0 = sınırsız."""
+        name = self.name_edit.text().strip() or "kayit"
+        name = re.sub(r'[<>:"/\\|?*]', '_', name)
+        try:
+            h = max(0, int(self.hour_edit.text().strip() or 0))
+        except ValueError:
+            h = 0
+        try:
+            m = max(0, int(self.min_edit.text().strip() or 0))
+        except ValueError:
+            m = 0
+        try:
+            s = max(0, int(self.sec_edit.text().strip() or 0))
+        except ValueError:
+            s = 0
+        total_secs = h * 3600 + m * 60 + s
+        return name, total_secs
+
+
 # ── Kurulum Sihirbazı ──────────────────────────────────────────────────────────
 class SetupWizard(QDialog):
     setup_complete = pyqtSignal(dict)
@@ -1743,353 +1884,877 @@ class DownloadTab(QWidget):
         w.start()
 
 
-# ── Keşfet Sekmesi ────────────────────────────────────────────────────────────
-class LiveStreamTab(QWidget):
+# ── Floating Kayıt Butonu ─────────────────────────────────────────────────────
+class FloatingRecButton(QWidget):
     """
-    Keşfet sekmesi — Hafif clipboard monitor tabanlı indirici.
-    Platform butonları varsayılan tarayıcıda açılır.
-    Kullanıcı URL kopyaladığında otomatik algılanır.
+    Ekranın kenarında yüzen kayıt butonu.
+    Sürüklenebilir, her zaman üstte, ana pencereden bağımsız.
     """
+    def __init__(self):
+        super().__init__(None,
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedSize(64, 64)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        self._recording   = False
+        self._drag_pos    = None
+        self._drag_moved  = False
+        self._elapsed     = 0
+        self._blink_on    = True
+
+        self._blink_timer = QTimer(self)
+        self._blink_timer.setInterval(600)
+        self._blink_timer.timeout.connect(self._blink)
+
+        self._time_timer  = QTimer(self)
+        self._time_timer.setInterval(1000)
+        self._time_timer.timeout.connect(self._tick)
+
+        self._build()
+
+        screen = QApplication.primaryScreen().geometry()
+        self.move(screen.width() - 80, screen.height() // 2 - 32)
+        self.show()
+
+    def _build(self):
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(4, 4, 4, 4)
+        lay.setSpacing(0)
+
+        self.btn = QLabel("⏺")
+        self.btn.setFixedSize(56, 56)
+        self.btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.btn.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.btn.setStyleSheet("""
+            QLabel {
+                background: rgba(30,30,30,210);
+                color: #FF4444;
+                border: 2px solid #FF4444;
+                border-radius: 28px;
+                font-size: 20pt;
+            }
+        """)
+        lay.addWidget(self.btn)
+
+    # ── Mouse — sürükleme / tıklama ayrımı ───────────────────────────────────
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos   = e.globalPosition().toPoint()
+            self._drag_moved = False
+
+    def mouseMoveEvent(self, e):
+        if self._drag_pos and e.buttons() == Qt.MouseButton.LeftButton:
+            delta = e.globalPosition().toPoint() - self._drag_pos
+            if delta.manhattanLength() > 5:
+                self._drag_moved = True
+                self.move(self.pos() + delta)
+                self._drag_pos = e.globalPosition().toPoint()
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            if not self._drag_moved:
+                self._toggle()
+        self._drag_pos   = None
+        self._drag_moved = False
+
+    def contextMenuEvent(self, e):
+        menu = QMenu(self)
+        if self._recording:
+            menu.addAction("⏹  Kaydı Durdur", self._stop)
+        else:
+            menu.addAction("⏺  Kayıt Başlat", self._start)
+        menu.addSeparator()
+        menu.addAction("❌  Gizle", self.hide)
+        menu.exec(e.globalPos())
+
+    # ── Kayıt ─────────────────────────────────────────────────────────────────
+    def _toggle(self):
+        if not self._recording:
+            self._start()
+        else:
+            self._stop()
+
+    def _start(self):
+        try:
+            import pyaudiowpatch as pyaudio
+            pa         = pyaudio.PyAudio()
+            wasapi_idx = pa.get_host_api_info_by_type(pyaudio.paWASAPI)["index"]
+            dev_index  = None
+            dev_info   = None
+            for i in range(pa.get_device_count()):
+                dev = pa.get_device_info_by_index(i)
+                if (dev["hostApi"] == wasapi_idx
+                        and dev["maxInputChannels"] > 0
+                        and dev.get("isLoopbackDevice", False)):
+                    dev_index = i
+                    dev_info  = dev
+                    break
+            pa.terminate()
+
+            if dev_index is None:
+                QMessageBox.warning(self, "Hata", "Loopback cihazı bulunamadı.")
+                return
+
+            main = self._main_window()
+            dirs = main._get_dirs() if main else {}
+
+            cfg = {}
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as _f:
+                    cfg = json.load(_f)
+            except Exception:
+                pass
+            rec_fmt = cfg.get("rec_format", "MP3")
+
+            self._worker = RecordWorker(dev_index, dev_info, rec_fmt, dirs)
+            self._worker.done.connect(self._on_done)
+            self._worker.error.connect(self._on_error)
+            self._worker.start()
+
+            self._recording  = True
+            self._elapsed    = 0
+            self._blink_on   = True
+            self._blink_timer.start()
+            self._time_timer.start()
+            self._set_style_recording()
+            self.btn.setText("00:00")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Kayıt Hatası", str(e))
+
+    def _stop(self):
+        if hasattr(self, "_worker"):
+            self._worker.stop()
+        self._blink_timer.stop()
+        self._time_timer.stop()
+        self._recording = False
+        self._set_style_idle()
+        self.btn.setText("⏺")
+
+    def _tick(self):
+        self._elapsed += 1
+        m, s = divmod(self._elapsed, 60)
+        self.btn.setText(f"{m:02d}:{s:02d}")
+
+    def _blink(self):
+        self._blink_on = not self._blink_on
+        if self._blink_on:
+            self._set_style_recording()
+        else:
+            self.btn.setStyleSheet("""
+                QLabel {
+                    background: rgba(80,0,0,180);
+                    color: #FF8888;
+                    border: 2px solid #882222;
+                    border-radius: 28px;
+                    font-size: 9pt;
+                    font-weight: bold;
+                }
+            """)
+
+    def _set_style_idle(self):
+        self.btn.setStyleSheet("""
+            QLabel {
+                background: rgba(30,30,30,210);
+                color: #FF4444;
+                border: 2px solid #FF4444;
+                border-radius: 28px;
+                font-size: 20pt;
+            }
+        """)
+
+    def _set_style_recording(self):
+        self.btn.setStyleSheet("""
+            QLabel {
+                background: rgba(180,0,0,220);
+                color: white;
+                border: 2px solid #FF4444;
+                border-radius: 28px;
+                font-size: 9pt;
+                font-weight: bold;
+            }
+        """)
+
+    def _on_done(self, path):
+        self._stop()
+        fname  = os.path.basename(path)
+        folder = os.path.dirname(path)
+        fsize  = f"{os.path.getsize(path)/1048576:.1f} MB"
+        dlg = DownloadDoneDialog(fname, folder, fsize, None)
+        dlg.exec()
+
+    def _on_error(self, msg):
+        self._stop()
+        QMessageBox.critical(self, "Kayıt Hatası", msg)
+
+    def _main_window(self):
+        for w in QApplication.topLevelWidgets():
+            if isinstance(w, QMainWindow):
+                return w
+        return None
+
+
+# ── Kayıt Sekmesi ─────────────────────────────────────────────────────────────
+class RecordWorker(QThread):
+    status = pyqtSignal(str)
+    done   = pyqtSignal(str)
+    error  = pyqtSignal(str)
+
+    def __init__(self, dev_index, dev_info, fmt, out_dirs):
+        super().__init__()
+        self.dev_index = dev_index
+        self.dev_info  = dev_info
+        self.fmt       = fmt
+        self.out_dirs  = out_dirs
+        self._running  = False
+        self._frames   = []
+
+    def run(self):
+        try:
+            import pyaudiowpatch as pyaudio
+            import wave, datetime
+            pa     = pyaudio.PyAudio()
+            ch     = min(int(self.dev_info["maxInputChannels"]), 2)
+            rate   = int(self.dev_info["defaultSampleRate"])
+            stream = pa.open(
+                format=pyaudio.paInt16,
+                channels=ch,
+                rate=rate,
+                input=True,
+                input_device_index=self.dev_index,
+                frames_per_buffer=512,
+            )
+            self._running = True
+            self._frames  = []
+            while self._running:
+                self._frames.append(stream.read(512, exception_on_overflow=False))
+            stream.stop_stream()
+            stream.close()
+            pa.terminate()
+            if not self._frames:
+                self.error.emit("Kayıt verisi yok.")
+                return
+            save_dir = self.out_dirs.get("wav", os.path.join(
+                os.path.expanduser("~"), "Documents", "Ata Studio", "wav"))
+            os.makedirs(save_dir, exist_ok=True)
+            ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            wav_path = os.path.join(save_dir, f"kayit_{ts}.wav")
+            with wave.open(wav_path, "wb") as wf:
+                wf.setnchannels(ch)
+                wf.setsampwidth(2)
+                wf.setframerate(rate)
+                wf.writeframes(b"".join(self._frames))
+            final = wav_path
+            if self.fmt == "MP3":
+                try:
+                    from pydub import AudioSegment
+                    mp3_dir  = self.out_dirs.get("mp3", save_dir)
+                    os.makedirs(mp3_dir, exist_ok=True)
+                    mp3_path = os.path.join(mp3_dir, f"kayit_{ts}.mp3")
+                    AudioSegment.from_wav(wav_path).export(mp3_path, format="mp3")
+                    os.remove(wav_path)
+                    final = mp3_path
+                except Exception as e:
+                    self.status.emit(f"MP3 dönüşümü başarısız, WAV kaydedildi ({e})")
+            self.done.emit(final)
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def stop(self):
+        self._running = False
+
+
+class RecordTab(QWidget):
     status_msg   = pyqtSignal(str)
     progress_val = pyqtSignal(int)
 
-    PLATFORMS = [
-        ("▶  YouTube",    "https://www.youtube.com"),
-        ("🎵  Spotify",   "https://open.spotify.com"),
-        ("☁  SoundCloud", "https://soundcloud.com"),
-        ("✕  X/Twitter",  "https://x.com"),
-        ("📷  Instagram",  "https://www.instagram.com"),
-        ("♪  TikTok",     "https://www.tiktok.com"),
-        ("👥  Facebook",   "https://www.facebook.com"),
-    ]
-
-    # Bu kalıplardan biri panoda varsa otomatik algıla
-    # Son kural → yt-dlp'nin desteklediği 1740+ platform dahil her HTTP/HTTPS URL'i yakala
-    URL_PATTERNS = [
-        r"youtube\.com/watch",
-        r"youtu\.be/",
-        r"youtube\.com/shorts",
-        r"open\.spotify\.com/",
-        r"soundcloud\.com/",
-        r"tiktok\.com/",
-        r"instagram\.com/",
-        r"twitter\.com/",
-        r"x\.com/",
-        r"facebook\.com/",
-        r"vimeo\.com/",
-        r"dailymotion\.com/",
-        r"twitch\.tv/",
-        r"bilibili\.com/",
-        r"rumble\.com/",
-        r"odysee\.com/",
-        r"bandcamp\.com/",
-        r"mixcloud\.com/",
-        r"deezer\.com/",
-        r"https?://",    # ← evrensel fallback: diğer tüm http(s) URL'leri yakala
-    ]
-
     def __init__(self, get_dirs, parent=None):
         super().__init__(parent)
-        self.get_dirs      = get_dirs
-        self.workers       = []
-        self._last_clip    = ""
-        self._monitor_on   = False
+        self.get_dirs = get_dirs
+        self._worker  = None
+        self._dev_map = {}
+        self._elapsed = 0
+        self._timer   = QTimer(self)
+        self._timer.setInterval(1000)
+        self._timer.timeout.connect(self._tick)
         self._build()
-        self._start_monitor()
+        self._scan_devices()
 
-    # ------------------------------------------------------------------ UI ---
     def _build(self):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
+        lay.addWidget(self._make_header())
 
-        lay.addWidget(self._make_platform_bar())
-        lay.addWidget(self._make_url_bar())
-        lay.addWidget(self._make_info_area(), 1)
-        lay.addWidget(self._make_bottom_bar())
+        # Orta alan: sol içerik + sağ kontrol paneli
+        mid = QWidget()
+        mid.setStyleSheet(f"background:{BG};")
+        hlay = QHBoxLayout(mid)
+        hlay.setContentsMargins(0, 0, 0, 0)
+        hlay.setSpacing(0)
+        hlay.addWidget(self._make_body(), 1)
+        hlay.addWidget(self._make_right_panel())
+        lay.addWidget(mid, 1)
 
-    def _make_platform_bar(self):
+    def _make_header(self):
+        hdr = QWidget()
+        hdr.setStyleSheet(f"background:{BG2}; border-bottom:1px solid {BORD};")
+        hlay = QHBoxLayout(hdr)
+        hlay.setContentsMargins(16, 10, 16, 10)
+        hlay.setSpacing(12)
+        hlay.addWidget(_label("⏺  Sistem Sesi Kaydı", bold=True, size=12, color=NAV))
+        hlay.addWidget(_label("—  Hoparlörden çıkan sesi direkt kaydeder (WASAPI Loopback)",
+                               size=9, color=TLT))
+        hlay.addStretch()
+        return hdr
+
+    def _make_body(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+        inner = QWidget()
+        inner.setStyleSheet(f"background:{BG};")
+        vlay  = QVBoxLayout(inner)
+        vlay.setContentsMargins(28, 24, 28, 24)
+        vlay.setSpacing(16)
+        dev_panel = _panel_frame()
+        dlay = QVBoxLayout(dev_panel)
+        dlay.setContentsMargins(18, 14, 18, 14)
+        dlay.setSpacing(8)
+        dlay.addWidget(_label("Loopback Cihazı", bold=True, size=10, color=NAV))
+        dlay.addWidget(_label("Aktif hoparlör/kulaklık çıkışının loopback versiyonunu seçin",
+                               size=9, color=TLT))
+        dev_row = QHBoxLayout()
+        self.dev_combo = QComboBox()
+        self.dev_combo.setFixedHeight(30)
+        self.dev_combo.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        dev_row.addWidget(self.dev_combo, 1)
+        refresh_btn = _btn("🔄  Yenile", "navy")
+        refresh_btn.setFixedHeight(30)
+        refresh_btn.setFixedWidth(90)
+        refresh_btn.clicked.connect(self._scan_devices)
+        dev_row.addWidget(refresh_btn)
+        dlay.addLayout(dev_row)
+        self.dev_warn = _label("", size=9, color=ERR)
+        dlay.addWidget(self.dev_warn)
+        vlay.addWidget(dev_panel)
+        rec_panel = _panel_frame()
+        rlay = QVBoxLayout(rec_panel)
+        rlay.setContentsMargins(18, 18, 18, 18)
+        rlay.setSpacing(8)
+        rlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_lbl = QLabel("00:00")
+        self.time_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_lbl.setStyleSheet(
+            f"color:{ERR}; font-size:36pt; font-weight:bold; "
+            f"font-family:'Courier New'; background:transparent;")
+        rlay.addWidget(self.time_lbl)
+        self.rec_dot = QLabel("⏸  Kayıt Bekliyor")
+        self.rec_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.rec_dot.setStyleSheet(
+            f"color:{TLT}; font-size:10pt; background:transparent;")
+        rlay.addWidget(self.rec_dot)
+        vlay.addWidget(rec_panel)
+        info_panel = _panel_frame()
+        ilay = QVBoxLayout(info_panel)
+        ilay.setContentsMargins(18, 12, 18, 12)
+        ilay.setSpacing(6)
+        ilay.addWidget(_label("Nasıl Çalışır?", bold=True, size=10, color=NAV))
+        ilay.addWidget(_h_line())
+        for tip in [
+            "• Mikrofon gerekmez — ses kartından doğrudan yakalanır",
+            "• AI müzik sitesi açık olmalı ve şarkı oynatılıyor olmalı",
+            "• Kayıt başlatıldıktan sonra istediğin siteyi oynat",
+            "• Bitince 'Durdur & Kaydet' butonuna bas",
+            "• WAV → Ata Studio/wav klasörü, MP3 → Ata Studio/mp3 klasörü",
+        ]:
+            ilay.addWidget(_label(tip, size=9, color=TMID))
+        vlay.addWidget(info_panel)
+        vlay.addStretch()
+        scroll.setWidget(inner)
+        return scroll
+
+    def _make_right_panel(self):
+        panel = QWidget()
+        panel.setFixedWidth(220)
+        panel.setStyleSheet(
+            f"background:{PNL}; border-left:1px solid {BORD};")
+        vlay = QVBoxLayout(panel)
+        vlay.setContentsMargins(16, 24, 16, 24)
+        vlay.setSpacing(12)
+
+        vlay.addWidget(_label("KAYIT AYARLARI", bold=True, size=9, color=TLT))
+        vlay.addWidget(_h_line())
+
+        vlay.addWidget(_label("Format", bold=True, size=10, color=NAV))
+        self.fmt_group = QButtonGroup(self)
+        cfg = {}
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as _f:
+                cfg = json.load(_f)
+        except Exception:
+            pass
+        current_fmt = cfg.get("rec_format", "MP3")
+        for i, fmt in enumerate(["WAV", "MP3"]):
+            rb = QRadioButton(fmt)
+            rb.setChecked(fmt == current_fmt)
+            self.fmt_group.addButton(rb, i)
+            vlay.addWidget(rb)
+        vlay.addWidget(_label("MP3 için ffmpeg + pydub gerekli",
+                               size=8, color=TLT))
+
+        vlay.addSpacing(12)
+        vlay.addWidget(_h_line())
+        vlay.addSpacing(12)
+
+        self.time_lbl = QLabel("00:00")
+        self.time_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_lbl.setStyleSheet(
+            f"color:{ERR}; font-size:28pt; font-weight:bold; "
+            f"font-family:'Courier New'; background:transparent;")
+        vlay.addWidget(self.time_lbl)
+
+        self.rec_dot = QLabel("⏸  Bekliyor")
+        self.rec_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.rec_dot.setStyleSheet(
+            f"color:{TLT}; font-size:9pt; background:transparent;")
+        vlay.addWidget(self.rec_dot)
+
+        vlay.addSpacing(16)
+
+        self.start_btn = QPushButton("⏺  Kaydı Başlat")
+        self.start_btn.setFixedHeight(38)
+        self.start_btn.setStyleSheet(
+            "background:#1A1A1A; color:#FFFFFF; border:none; "
+            "border-radius:4px; font-weight:bold; font-size:10pt;")
+        self.start_btn.clicked.connect(self._start_rec)
+        vlay.addWidget(self.start_btn)
+
+        self.stop_btn = QPushButton("⏹  Durdur & Kaydet")
+        self.stop_btn.setFixedHeight(38)
+        self.stop_btn.setStyleSheet(
+            "background:#C62828; color:#FFFFFF; border:none; "
+            "border-radius:4px; font-weight:bold; font-size:10pt;")
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self._stop_rec)
+        vlay.addWidget(self.stop_btn)
+
+        vlay.addStretch()
+
+        self.rec_status = _label("Hazır", size=8, color=TLT)
+        self.rec_status.setWordWrap(True)
+        self.rec_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        vlay.addWidget(self.rec_status)
+
+        return panel
+
+    def _scan_devices(self):
+        self.dev_combo.clear()
+        self._dev_map.clear()
+        try:
+            import pyaudiowpatch as pyaudio
+            pa         = pyaudio.PyAudio()
+            wasapi_idx = pa.get_host_api_info_by_type(pyaudio.paWASAPI)["index"]
+            found      = False
+            for i in range(pa.get_device_count()):
+                dev = pa.get_device_info_by_index(i)
+                if (dev["hostApi"] == wasapi_idx
+                        and dev["maxInputChannels"] > 0
+                        and dev.get("isLoopbackDevice", False)):
+                    name = dev["name"]
+                    self._dev_map[name] = (i, dev)
+                    self.dev_combo.addItem(name)
+                    found = True
+            pa.terminate()
+            if found:
+                self.dev_warn.setText("")
+                self.start_btn.setEnabled(True)
+            else:
+                self.dev_warn.setText("⚠️  Loopback cihazı bulunamadı. Ses çıkışı aktif olmalı.")
+                self.start_btn.setEnabled(False)
+        except ImportError:
+            self.dev_warn.setText("❌  pyaudiowpatch kurulu değil. Terminalde: pip install pyaudiowpatch")
+            self.start_btn.setEnabled(False)
+        except Exception as e:
+            self.dev_warn.setText(f"❌  Cihaz tarama hatası: {e}")
+            self.start_btn.setEnabled(False)
+
+    def _start_rec(self):
+        name = self.dev_combo.currentText()
+        if name not in self._dev_map:
+            return
+        dev_index, dev_info = self._dev_map[name]
+        fmt = "MP3" if self.fmt_group.checkedId() == 1 else "WAV"
+        self._worker = RecordWorker(dev_index, dev_info, fmt, self.get_dirs())
+        self._worker.status.connect(self._on_status)
+        self._worker.done.connect(self._on_done)
+        self._worker.error.connect(self._on_error)
+        self._worker.start()
+        self._elapsed = 0
+        self._timer.start()
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.dev_combo.setEnabled(False)
+        self.rec_dot.setText("🔴  Kaydediliyor...")
+        self.rec_dot.setStyleSheet(f"color:{ERR}; font-size:10pt; background:transparent;")
+        self._on_status("Kayıt başladı")
+
+    def _stop_rec(self):
+        if self._worker:
+            self._worker.stop()
+        self._timer.stop()
+        self.stop_btn.setEnabled(False)
+        self.rec_dot.setText("⏳  İşleniyor...")
+        self._on_status("İşleniyor...")
+
+    def _tick(self):
+        self._elapsed += 1
+        m, s = divmod(self._elapsed, 60)
+        self.time_lbl.setText(f"{m:02d}:{s:02d}")
+
+    def _on_status(self, msg):
+        self.rec_status.setText(msg)
+        self.status_msg.emit(msg)
+
+    def _on_done(self, path):
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.dev_combo.setEnabled(True)
+        self.time_lbl.setText("00:00")
+        self.rec_dot.setText("✅  Kaydedildi")
+        self.rec_dot.setStyleSheet(f"color:{SUCC}; font-size:10pt; background:transparent;")
+        fname  = os.path.basename(path)
+        folder = os.path.dirname(path)
+        self.rec_status.setText(f"✅  {fname}")
+        self.status_msg.emit(f"Kayıt tamamlandı: {fname}")
+        self.progress_val.emit(100)
+        dlg = DownloadDoneDialog(fname, folder,
+            f"{os.path.getsize(path)/1048576:.1f} MB", self)
+        dlg.exec()
+
+    def _on_error(self, msg):
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.dev_combo.setEnabled(True)
+        self._timer.stop()
+        self.time_lbl.setText("00:00")
+        self.rec_dot.setText("❌  Hata")
+        self.rec_dot.setStyleSheet(f"color:{ERR}; font-size:10pt; background:transparent;")
+        self.rec_status.setText(f"❌ {msg[:60]}")
+        self.status_msg.emit(f"Hata: {msg}")
+        QMessageBox.critical(self, "Kayıt Hatası", msg)
+
+
+# ── Keşfet Sekmesi ────────────────────────────────────────────────────────────
+class LiveStreamTab(QWidget):
+    """
+    Keşfet sekmesi — Hafif gömülü browser.
+    Kalıcı profil (login kalır), kayıt bitince cache temizlenir.
+    """
+    status_msg   = pyqtSignal(str)
+    progress_val = pyqtSignal(int)
+
+    def __init__(self, get_dirs, parent=None):
+        super().__init__(parent)
+        self.get_dirs    = get_dirs
+        self.workers     = []
+        self._browser_ok = False
+        self._profile    = None
+        self._view       = None
+        self._recording  = False
+        self._rec_worker = None
+        self._rec_elapsed = 0
+        self._rec_timer  = QTimer(self)
+        self._rec_timer.setInterval(1000)
+        self._rec_timer.timeout.connect(self._rec_tick)
+        self._build()
+        QTimer.singleShot(3000, self._clean_old_cache)
+
+    def _build(self):
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(self._make_nav_bar())
+        lay.addWidget(self._make_browser_area(), 1)
+
+    def _make_nav_bar(self):
         bar = QWidget()
         bar.setStyleSheet(f"background:{BG2}; border-bottom:1px solid {BORD};")
-        vlay = QVBoxLayout(bar)
-        vlay.setContentsMargins(14, 10, 14, 10)
-        vlay.setSpacing(6)
-
-        vlay.addWidget(_label("Platform Seç  →  Tarayıcında Aç  →  URL Kopyala  →  Otomatik Algıla",
-                               size=9, color=TLT))
-
-        row1 = QHBoxLayout()
-        row2 = QHBoxLayout()
-        for i, (label, url) in enumerate(self.PLATFORMS):
-            btn = _btn(label, "platform")
-            btn.setFixedHeight(30)
-            btn.clicked.connect(lambda _, u=url: self._open_browser(u))
-            (row1 if i < 4 else row2).addWidget(btn)
-        row1.addStretch()
-        row2.addStretch()
-        vlay.addLayout(row1)
-        vlay.addLayout(row2)
-        return bar
-
-    def _make_url_bar(self):
-        bar = QWidget()
-        bar.setStyleSheet(f"background:{PNL}; border-bottom:1px solid {BORD};")
         hlay = QHBoxLayout(bar)
-        hlay.setContentsMargins(12, 8, 12, 8)
-        hlay.setSpacing(8)
+        hlay.setContentsMargins(10, 6, 10, 6)
+        hlay.setSpacing(6)
 
-        self.url_edit = QLineEdit()
-        self.url_edit.setPlaceholderText(
-            "URL buraya otomatik gelir — ya da elle yapıştır / arama metni yaz...")
-        self.url_edit.setFixedHeight(32)
-        self.url_edit.returnPressed.connect(self._trigger_download)
-        hlay.addWidget(self.url_edit, 1)
+        self.back_btn = QPushButton("←")
+        self.back_btn.setFixedSize(30, 30)
+        self.back_btn.setStyleSheet(
+            f"background:{PNL}; border:1px solid {BORD}; border-radius:4px; font-size:12pt;")
+        self.back_btn.clicked.connect(self._go_back)
+        hlay.addWidget(self.back_btn)
 
-        paste_btn = _btn("📋  Panodan Al", "navy")
-        paste_btn.setFixedHeight(32)
-        paste_btn.setFixedWidth(120)
-        paste_btn.clicked.connect(self._manual_paste)
-        hlay.addWidget(paste_btn)
+        self.fwd_btn = QPushButton("→")
+        self.fwd_btn.setFixedSize(30, 30)
+        self.fwd_btn.setStyleSheet(
+            f"background:{PNL}; border:1px solid {BORD}; border-radius:4px; font-size:12pt;")
+        self.fwd_btn.clicked.connect(self._go_fwd)
+        hlay.addWidget(self.fwd_btn)
 
-        return bar
+        self.reload_btn = QPushButton("🔄")
+        self.reload_btn.setFixedSize(30, 30)
+        self.reload_btn.setStyleSheet(
+            f"background:{PNL}; border:1px solid {BORD}; border-radius:4px;")
+        self.reload_btn.clicked.connect(self._reload)
+        hlay.addWidget(self.reload_btn)
 
-    def _make_info_area(self):
-        """Kullanım rehberi + son indirilenler."""
-        w = QWidget()
-        w.setStyleSheet(f"background:{BG};")
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(28, 24, 28, 24)
-        lay.setSpacing(20)
+        self.url_bar = QLineEdit()
+        self.url_bar.setPlaceholderText(
+            "YouTube, SoundCloud, Spotify veya herhangi bir müzik sitesi...")
+        self.url_bar.setFixedHeight(30)
+        self.url_bar.returnPressed.connect(self._navigate)
+        hlay.addWidget(self.url_bar, 1)
 
-        # Adım adım rehber
-        guide = _panel_frame()
-        glay  = QVBoxLayout(guide)
-        glay.setContentsMargins(22, 16, 22, 16)
-        glay.setSpacing(10)
-        glay.addWidget(_label("Nasıl Kullanılır?", bold=True, size=11, color=NAV))
-        glay.addWidget(_h_line())
+        self.go_btn = QPushButton("Git")
+        self.go_btn.setFixedHeight(30)
+        self.go_btn.setFixedWidth(50)
+        self.go_btn.setStyleSheet(
+            f"background:{NAV}; color:white; border:none; border-radius:4px; font-weight:bold;")
+        self.go_btn.clicked.connect(self._navigate)
+        hlay.addWidget(self.go_btn)
 
-        steps = [
-            ("1", "Yukarıdan bir platform butonuna tıkla",
-                  "Tarayıcında açılır, giriş yapabilirsin"),
-            ("2", "İstediğin video / şarkı sayfasına git",
-                  "YouTube, Spotify, Vimeo, Twitch, Bilibili ve 1740+ platform..."),
-            ("3", "Adres çubuğundaki URL'yi kopyala  (Ctrl+C)",
-                  "Ata Studio arka planda otomatik algılar 🔔"),
-            ("4", "Programa dön — URL zaten hazır!",
-                  "İndir butonuna bas, gerisini biz hallederiz ✅"),
-        ]
-        for num, title, sub in steps:
-            row = QHBoxLayout()
-            num_lbl = QLabel(num)
-            num_lbl.setFixedSize(28, 28)
-            num_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            num_lbl.setStyleSheet(
-                f"background:#1A1A1A; color:white; font-weight:bold; "
-                f"font-size:11pt; border-radius:14px;")
-            col = QVBoxLayout()
-            col.setSpacing(1)
-            col.addWidget(_label(title, bold=True, size=10, color=NAV))
-            col.addWidget(_label(sub, size=9, color=TLT))
-            row.addWidget(num_lbl)
-            row.addSpacing(10)
-            row.addLayout(col, 1)
-            glay.addLayout(row)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setStyleSheet(f"color:{BORD};")
+        hlay.addWidget(sep)
 
-        lay.addWidget(guide)
-
-        # Clipboard monitor durumu
-        self.monitor_lbl = _label(
-            "🟢  Clipboard Monitor Aktif — URL kopyaladığında otomatik algılanır",
-            size=9, color=SUCC)
-        self.monitor_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.addWidget(self.monitor_lbl)
-        lay.addStretch()
-
-        return w
-
-    def _make_bottom_bar(self):
-        bar = QWidget()
-        bar.setStyleSheet(f"background:{NAV}; border-top:1px solid #162230;")
-        hlay = QHBoxLayout(bar)
-        hlay.setContentsMargins(12, 6, 12, 6)
-        hlay.setSpacing(8)
-
-        self.ls_status = _label("Hazır — platform seç ve URL kopyala",
-                                  size=9, color=TLT)
-        self.ls_status.setStyleSheet(f"color:{TLT}; background:transparent;")
-        hlay.addWidget(self.ls_status, 1)
-
-        self.ls_progress = QProgressBar()
-        self.ls_progress.setFixedWidth(160)
-        self.ls_progress.setFixedHeight(5)
-        self.ls_progress.setTextVisible(False)
-        self.ls_progress.setVisible(False)
-        self.ls_progress.setStyleSheet(
-            f"QProgressBar{{background:#2A3F55;border:none;border-radius:2px;}}"
-            f"QProgressBar::chunk{{background:#1A1A1A;border-radius:2px;}}")
-        hlay.addWidget(self.ls_progress)
-
-        hlay.addWidget(_label("Format:", size=9, color=TLT))
-        self.fmt_combo = QComboBox()
-        self.fmt_combo.addItems(["mp3", "wav", "mp4"])
-        self.fmt_combo.setFixedWidth(68)
-        self.fmt_combo.setFixedHeight(26)
-        hlay.addWidget(self.fmt_combo)
-
-        hlay.addWidget(_label("Kalite:", size=9, color=TLT))
-        self.qual_combo = QComboBox()
-        self.qual_combo.addItems(["En İyi", "Yüksek", "Orta"])
-        self.qual_combo.setFixedWidth(80)
-        self.qual_combo.setFixedHeight(26)
-        hlay.addWidget(self.qual_combo)
-
-        self.dl_btn = _btn("⬇  İndir", "gold")
-        self.dl_btn.setFixedHeight(30)
-        self.dl_btn.clicked.connect(self._trigger_download)
-        hlay.addWidget(self.dl_btn)
+        self.rec_btn = QPushButton("⏺  Kayıt Başlat")
+        self.rec_btn.setFixedHeight(30)
+        self.rec_btn.setStyleSheet(
+            "background:#C62828; color:white; border:none; "
+            "border-radius:4px; font-weight:bold; padding:0 12px;")
+        self.rec_btn.clicked.connect(self._toggle_record)
+        hlay.addWidget(self.rec_btn)
 
         return bar
 
-    # ----------------------------------------------- Clipboard Monitor -------
-    def _start_monitor(self):
-        self._timer = QTimer(self)
-        self._timer.setInterval(600)          # 600ms'de bir kontrol
-        self._timer.timeout.connect(self._check_clipboard)
-        self._timer.start()
-        self._monitor_on = True
-
-    def _check_clipboard(self):
+    def _make_browser_area(self):
         try:
-            clip = QApplication.clipboard().text().strip()
+            from PyQt6.QtWebEngineWidgets import QWebEngineView
+            from PyQt6.QtWebEngineCore import (
+                QWebEngineProfile, QWebEngineSettings, QWebEnginePage)
+
+            profile_path = os.path.join(
+                os.path.expanduser("~"), ".atastudio_browser")
+            self._profile = QWebEngineProfile("AtaStudioUser")
+            self._profile.setPersistentStoragePath(profile_path)
+            self._profile.setPersistentCookiesPolicy(
+                QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
+
+            settings = self._profile.settings()
+            settings.setAttribute(
+                QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False)
+            settings.setAttribute(
+                QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+            settings.setAttribute(
+                QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
+
+            self._view = QWebEngineView()
+            self._page = QWebEnginePage(self._profile, self._view)
+            self._view.setPage(self._page)
+            self._view.urlChanged.connect(self._on_url_changed)
+            self._view.loadStarted.connect(
+                lambda: self.status_msg.emit("Sayfa yükleniyor..."))
+            self._view.loadFinished.connect(
+                lambda ok: self.status_msg.emit("Hazır" if ok else "Yükleme hatası"))
+            # Google ve diğer platformların WebView engelini aş
+            self._profile.setHttpUserAgent(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+            self._view.setHtml(self._start_html())
+            self._browser_ok = True
+            return self._view
+
+        except Exception as _be:
+            print(f"[WebEngine Hata] {type(_be).__name__}: {_be}")
+            self._browser_ok = False
+            placeholder = QWidget()
+            placeholder.setStyleSheet(f"background:{BG};")
+            vlay = QVBoxLayout(placeholder)
+            vlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            vlay.addWidget(_label(
+                "PyQt6-WebEngine kurulu değil.",
+                bold=True, size=12, color=NAV))
+            vlay.addWidget(_label(
+                "Terminalde: pip install PyQt6-WebEngine",
+                size=10, color=TLT))
+            return placeholder
+
+    def _start_html(self):
+        return """
+        <html><body style="
+            background:#F7F7F7; font-family:Arial;
+            display:flex; align-items:center; justify-content:center;
+            height:100vh; margin:0; flex-direction:column; gap:16px;">
+          <div style="font-size:48px;">🎵</div>
+          <div style="font-size:18px; color:#444; font-weight:bold;">
+            Adres çubuğuna bir müzik sitesi yaz</div>
+          <div style="font-size:13px; color:#888;">
+            youtube.com · soundcloud.com · spotify.com · bandcamp.com</div>
+        </body></html>
+        """
+
+    def _navigate(self):
+        if not self._browser_ok:
+            return
+        raw = self.url_bar.text().strip()
+        if not raw:
+            return
+        if not raw.startswith("http"):
+            raw = "https://" + raw
+        self._view.load(QUrl(raw))
+
+    def _go_back(self):
+        if self._browser_ok:
+            self._view.back()
+
+    def _go_fwd(self):
+        if self._browser_ok:
+            self._view.forward()
+
+    def _reload(self):
+        if self._browser_ok:
+            self._view.reload()
+
+    def _on_url_changed(self, url):
+        self.url_bar.setText(url.toString())
+
+    def _toggle_record(self):
+        if not self._recording:
+            self._start_record()
+        else:
+            self._stop_record()
+
+    def _start_record(self):
+        try:
+            import pyaudiowpatch as pyaudio
+            pa         = pyaudio.PyAudio()
+            wasapi_idx = pa.get_host_api_info_by_type(pyaudio.paWASAPI)["index"]
+            dev_index  = None
+            dev_info   = None
+            for i in range(pa.get_device_count()):
+                dev = pa.get_device_info_by_index(i)
+                if (dev["hostApi"] == wasapi_idx
+                        and dev["maxInputChannels"] > 0
+                        and dev.get("isLoopbackDevice", False)):
+                    dev_index = i
+                    dev_info  = dev
+                    break
+            pa.terminate()
+            if dev_index is None:
+                QMessageBox.warning(self, "Cihaz Bulunamadı",
+                    "Loopback cihazı bulunamadı.\n"
+                    "Ses çıkışının aktif olduğundan emin olun.")
+                return
+            cfg = {}
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as _f:
+                    cfg = json.load(_f)
+            except Exception:
+                pass
+            rec_fmt = cfg.get("rec_format", "MP3")
+            self._rec_worker = RecordWorker(
+                dev_index, dev_info, rec_fmt, self.get_dirs())
+            self._rec_worker.done.connect(self._on_rec_done)
+            self._rec_worker.error.connect(self._on_rec_error)
+            self._rec_worker.start()
+            self._recording   = True
+            self._rec_elapsed = 0
+            self._rec_timer.start()
+            self.rec_btn.setText("⏹  00:00  Durdur")
+            self.rec_btn.setStyleSheet(
+                "background:#1A1A1A; color:#FF4444; border:none; "
+                "border-radius:4px; font-weight:bold; padding:0 12px;")
+            self.status_msg.emit("🔴 Kayıt başladı")
+        except Exception as e:
+            QMessageBox.critical(self, "Kayıt Hatası", str(e))
+
+    def _stop_record(self):
+        if self._rec_worker:
+            self._rec_worker.stop()
+        self._rec_timer.stop()
+        self._recording = False
+        self.rec_btn.setText("⏺  Kayıt Başlat")
+        self.rec_btn.setStyleSheet(
+            "background:#C62828; color:white; border:none; "
+            "border-radius:4px; font-weight:bold; padding:0 12px;")
+        self.status_msg.emit("⏳ İşleniyor...")
+
+    def _rec_tick(self):
+        self._rec_elapsed += 1
+        m, s = divmod(self._rec_elapsed, 60)
+        self.rec_btn.setText(f"⏹  {m:02d}:{s:02d}  Durdur")
+
+    def _on_rec_done(self, path):
+        fname  = os.path.basename(path)
+        folder = os.path.dirname(path)
+        fsize  = f"{os.path.getsize(path)/1048576:.1f} MB"
+        self.status_msg.emit(f"✅ Kayıt tamamlandı: {fname}")
+        self.progress_val.emit(100)
+        QTimer.singleShot(500, self._clean_media_cache)
+        dlg = DownloadDoneDialog(fname, folder, fsize, self)
+        dlg.exec()
+
+    def _on_rec_error(self, msg):
+        self.status_msg.emit(f"❌ {msg}")
+        QMessageBox.critical(self, "Kayıt Hatası", msg)
+
+    def clear_browser_cache(self):
+        """Ayarlar sekmesinden çağrılabilir — tam cache temizliği."""
+        if not self._browser_ok or not self._profile:
+            return False
+        try:
+            self._profile.clearHttpCache()
+            self._profile.clearAllVisitedLinks()
+            return True
         except Exception:
+            return False
+
+    def _clean_media_cache(self):
+        """Kayıt sonrası medya cache temizle — login çerezlerine dokunma."""
+        if not self._browser_ok or not self._profile:
             return
-        if clip == self._last_clip or not clip:
-            return
-        self._last_clip = clip
+        try:
+            self._profile.clearHttpCache()
+            self.status_msg.emit("🧹 Cache temizlendi")
+        except Exception:
+            pass
 
-        # Desteklenen platform URL'si mi?
-        for pattern in self.URL_PATTERNS:
-            if re.search(pattern, clip):
-                self._on_url_detected(clip)
-                break
-
-    def _on_url_detected(self, url: str):
-        """Panoda herhangi bir URL algılandı — yt-dlp 1740+ platform destekler."""
-        self.url_edit.setText(url)
-
-        # Platformu tespit et (bilinmeyen = evrensel yt-dlp desteği)
-        platform = "Evrensel"
-        for name, base in [
-            ("YouTube",     "youtube"),    ("Spotify",     "spotify"),
-            ("SoundCloud",  "soundcloud"), ("TikTok",      "tiktok"),
-            ("Instagram",   "instagram"),  ("Twitter",     "twitter"),
-            ("X",           "x.com"),      ("Facebook",    "facebook"),
-            ("Vimeo",       "vimeo"),      ("Dailymotion", "dailymotion"),
-            ("Twitch",      "twitch"),     ("Bilibili",    "bilibili"),
-            ("Rumble",      "rumble"),     ("Odysee",      "odysee"),
-            ("Bandcamp",    "bandcamp"),   ("Mixcloud",    "mixcloud"),
-            ("Deezer",      "deezer"),
-        ]:
-            if base in url.lower():
-                platform = name
-                break
-
-        short = url[:55] + "..." if len(url) > 55 else url
-        self.ls_status.setText(f"🔔  {platform} linki algılandı!")
-        self.status_msg.emit(f"{platform} linki algılandı")
-        self.monitor_lbl.setText(
-            f"🔔  {platform} linki yakalandı → İndir butonuna bas!")
-        self.monitor_lbl.setStyleSheet(f"color:{GOLD}; font-weight:bold;")
-
-    # -------------------------------------------------------- Tarayıcı --------
-    def _open_browser(self, url: str):
-        webbrowser.open(url)
-        self.ls_status.setText(f"Tarayıcıda açıldı: {url}")
-        self.status_msg.emit(f"Tarayıcıda açıldı")
-
-    def _manual_paste(self):
-        clip = QApplication.clipboard().text().strip()
-        if clip:
-            self.url_edit.setText(clip)
-            self._last_clip = clip
-            self.ls_status.setText("URL alındı — İndir butonuna basabilirsin")
-
-    # ------------------------------------------------------------ İndir -------
-    def _trigger_download(self):
-        url = self.url_edit.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Uyarı",
-                "URL boş!\nBir platform seç, sayfaya git ve URL\'yi kopyala.")
-            return
-        dirs = self.get_dirs()
-        if not dirs:
-            QMessageBox.warning(self, "Uyarı", "Lütfen önce kurulumu tamamlayın.")
-            return
-
-        fmt     = self.fmt_combo.currentText()
-        quality = self.qual_combo.currentText()
-        out_dir = dirs.get(fmt, dirs.get("mp3", ""))
-        before  = set(os.listdir(out_dir)) if os.path.isdir(out_dir) else set()
-
-        self.dl_btn.setEnabled(False)
-        self.ls_progress.setVisible(True)
-        self.ls_progress.setValue(0)
-        self.ls_status.setText("⏳ İndirme başlıyor...")
-        self.status_msg.emit("İndirme başlıyor...")
-        self.monitor_lbl.setText(
-            "🟡  İndirme devam ediyor — clipboard monitor duraklatıldı")
-        self.monitor_lbl.setStyleSheet(f"color:{GOLD};")
-        self._timer.stop()   # İndirme sırasında monitor'ü durdur
-
-        w = DownloadWorker(url, dirs, fmt, quality)
-        self.workers.append(w)
-
-        def on_progress(pct, msg):
-            self.ls_progress.setValue(pct)
-            self.ls_status.setText(msg)
-            self.progress_val.emit(pct)
-            self.status_msg.emit(msg)
-
-        def on_done():
-            self.dl_btn.setEnabled(True)
-            self.ls_progress.setVisible(False)
-            self.ls_status.setText("✅ İndirme tamamlandı!")
-            self.progress_val.emit(100)
-            self.url_edit.clear()
-            self._last_clip = ""
-            self.monitor_lbl.setText(
-                "🟢  Clipboard Monitor Aktif — URL kopyaladığında otomatik algılanır")
-            self.monitor_lbl.setStyleSheet(f"color:{SUCC};")
-            self._timer.start()   # Monitor'ü yeniden başlat
-
-            after     = set(os.listdir(out_dir)) if os.path.isdir(out_dir) else set()
-            new_files = after - before
-            if new_files:
-                fname   = sorted(new_files)[-1]
-                fpath   = os.path.join(out_dir, fname)
-                fsize_b = os.path.getsize(fpath)
-                fsize_s = (f"{fsize_b/1048576:.1f} MB" if fsize_b > 1048576
-                           else f"{fsize_b/1024:.0f} KB")
-                dlg = DownloadDoneDialog(fname, out_dir, fsize_s, self)
-                dlg.exec()
-
-        def on_error(msg):
-            self.dl_btn.setEnabled(True)
-            self.ls_progress.setVisible(False)
-            self.ls_status.setText(f"❌ Hata: {msg[:60]}")
-            self.status_msg.emit(f"Hata: {msg[:60]}")
-            self.monitor_lbl.setText(
-                "🟢  Clipboard Monitor Aktif — URL kopyaladığında otomatik algılanır")
-            self.monitor_lbl.setStyleSheet(f"color:{SUCC};")
-            self._timer.start()
-            QMessageBox.critical(self, "İndirme Başarısız",
-                f"{msg}\n\nÇözüm: Tarayıcında platforma giriş yap ve tekrar dene.")
-
-        w.progress.connect(on_progress)
-        w.done.connect(on_done)
-        w.error.connect(on_error)
-        w.start()
+    def _clean_old_cache(self):
+        """Uygulama açılışında 7 günden eski geçici dosyaları sil."""
+        try:
+            import time
+            cache_dir = os.path.join(
+                os.path.expanduser("~"), ".atastudio_browser", "Cache")
+            if not os.path.isdir(cache_dir):
+                return
+            cutoff = time.time() - 7 * 86400
+            removed = 0
+            for f in Path(cache_dir).rglob("*"):
+                try:
+                    if f.is_file() and f.stat().st_mtime < cutoff:
+                        f.unlink()
+                        removed += 1
+                except Exception:
+                    pass
+            if removed:
+                self.status_msg.emit(
+                    f"🧹 {removed} eski cache dosyası temizlendi")
+        except Exception:
+            pass
 
 
 # ── Ayarlar Sekmesi ────────────────────────────────────────────────────────────
@@ -2191,6 +2856,59 @@ class SettingsTab(QWidget):
         s3lay.addWidget(save_proxy_btn)
 
         lay.addWidget(section3)
+
+        # ── Kayıt Format Ayarı ────────────────────────────────────────────────
+        rec_frame = _panel_frame()
+        rec_lay   = QVBoxLayout(rec_frame)
+        rec_lay.setContentsMargins(18, 14, 18, 14)
+        rec_lay.setSpacing(8)
+        rec_lay.addWidget(_label("Varsayılan Kayıt Formatı", bold=True, size=10, color=NAV))
+        rec_lay.addWidget(_label(
+            "Floating buton ve Keşfet sekmesindeki kayıt için kullanılır.",
+            size=9, color=TLT))
+        rec_lay.addWidget(_h_line())
+
+        rec_fmt_row = QHBoxLayout()
+        self._rec_fmt_group = QButtonGroup(self)
+        current_fmt = self.get_cfg().get("rec_format", "MP3")
+        for i, fmt in enumerate(["MP3", "WAV"]):
+            rb = QRadioButton(fmt)
+            rb.setChecked(fmt == current_fmt)
+            self._rec_fmt_group.addButton(rb, i)
+            rb.toggled.connect(self._save_rec_format)
+            rec_fmt_row.addWidget(rb)
+        rec_fmt_row.addStretch()
+        rec_fmt_row.addWidget(_label(
+            "MP3 için ffmpeg gerekli", size=8, color=TLT))
+        rec_lay.addLayout(rec_fmt_row)
+        lay.addWidget(rec_frame)
+
+        # ── Browser Cache Temizleme ───────────────────────────────────────────
+        cache_frame = _panel_frame()
+        cache_lay   = QVBoxLayout(cache_frame)
+        cache_lay.setContentsMargins(18, 14, 18, 14)
+        cache_lay.setSpacing(8)
+        cache_lay.addWidget(_label("Browser Cache", bold=True, size=10, color=NAV))
+        cache_lay.addWidget(_label(
+            "Keşfet sekmesi browser geçici dosyalarını temizler. "
+            "Login bilgileri ve çerezler korunur.",
+            size=9, color=TLT))
+        cache_lay.addWidget(_h_line())
+
+        cache_btn_row = QHBoxLayout()
+        self._cache_btn = QPushButton("🧹  Browser Cache Temizle")
+        self._cache_btn.setFixedHeight(32)
+        self._cache_btn.setStyleSheet(
+            f"background:{PNL}; color:{TXT}; border:1px solid {BORD}; "
+            f"border-radius:4px; padding:0 16px; font-weight:bold;")
+        self._cache_btn.clicked.connect(self._clear_cache)
+        cache_btn_row.addWidget(self._cache_btn)
+
+        self._cache_lbl = _label("", size=9, color=SUCC)
+        cache_btn_row.addWidget(self._cache_lbl, 1)
+        cache_lay.addLayout(cache_btn_row)
+
+        lay.addWidget(cache_frame)
         lay.addStretch()
 
     def _save_proxy(self):
@@ -2246,6 +2964,34 @@ class SettingsTab(QWidget):
         else:
             QMessageBox.warning(self, "Uyarı",
                 f"Klasör bulunamadı:\n{base}")
+
+    def _save_rec_format(self):
+        fmt = "MP3" if self._rec_fmt_group.checkedId() == 0 else "WAV"
+        cfg = load_config()
+        cfg["rec_format"] = fmt
+        save_config(cfg)
+
+    def _clear_cache(self):
+        """Ana pencere üzerinden LiveStreamTab'a erişip cache temizle."""
+        try:
+            main = self.window()
+            if hasattr(main, "_livestream_tab"):
+                ok = main._livestream_tab.clear_browser_cache()
+                if ok:
+                    self._cache_lbl.setText("✅ Cache temizlendi")
+                    self._cache_btn.setEnabled(False)
+                    QTimer.singleShot(
+                        3000,
+                        lambda: (
+                            self._cache_lbl.setText(""),
+                            self._cache_btn.setEnabled(True)
+                        ))
+                else:
+                    self._cache_lbl.setText("⚠️ Browser henüz açılmamış")
+            else:
+                self._cache_lbl.setText("⚠️ Browser bulunamadı")
+        except Exception as e:
+            self._cache_lbl.setText(f"❌ {e}")
 
 
 # ── Ana Pencere ────────────────────────────────────────────────────────────────
@@ -2347,6 +3093,7 @@ class MainWindow(QMainWindow):
             ("🎵  Dönüştür",  self._make_convert_tab),
             ("📥  İndir",     self._make_download_tab),
             ("🔍  Keşfet",    self._make_livestream_tab),
+            ("⏺  Kayıt",     self._make_record_tab),
             ("⚙  Ayarlar",   self._make_settings_tab),
         ]
 
@@ -2410,6 +3157,13 @@ class MainWindow(QMainWindow):
         self._livestream_tab = w
         return w
 
+    def _make_record_tab(self):
+        w = RecordTab(self._get_dirs)
+        w.status_msg.connect(self._set_status)
+        w.progress_val.connect(self.main_progress.setValue)
+        self._record_tab = w
+        return w
+
     def _make_settings_tab(self):
         w = SettingsTab(self._get_cfg, self._save_cfg)
         self._settings_tab = w
@@ -2447,6 +3201,46 @@ class MainWindow(QMainWindow):
         for d in self._out_dirs.values():
             os.makedirs(d, exist_ok=True)
         self._set_status("Hazır")
+
+        # Floating kayıt butonu
+        self._float_btn = FloatingRecButton()
+
+        # System Tray
+        self._tray = QSystemTrayIcon(self)
+        # Uygulama ikonunu kullan, yoksa varsayılan sistem ikonu
+        app_icon = QApplication.instance().windowIcon()
+        if app_icon.isNull():
+            app_icon = self.style().standardIcon(
+                self.style().StandardPixmap.SP_MediaPlay)
+        self._tray.setIcon(app_icon)
+        self._tray.setToolTip("Ata Studio")
+        tray_menu = QMenu()
+        self._tray_rec_action = tray_menu.addAction("⏺  Kayıt Başlat")
+        self._tray_rec_action.triggered.connect(self._tray_toggle_rec)
+        tray_menu.addSeparator()
+        tray_menu.addAction("📂  Klasörü Aç", self._open_output_folder)
+        tray_menu.addSeparator()
+        tray_menu.addAction("❌  Kapat", self.close)
+        self._tray.setContextMenu(tray_menu)
+        self._tray.activated.connect(self._tray_activated)
+        self._tray.show()
+
+    def _tray_toggle_rec(self):
+        self._float_btn._toggle()
+        if self._float_btn._recording:
+            self._tray_rec_action.setText("⏹  Kaydı Durdur")
+        else:
+            self._tray_rec_action.setText("⏺  Kayıt Başlat")
+
+    def _tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            self.show()
+            self.raise_()
+
+    def _open_output_folder(self):
+        dirs = self._get_dirs()
+        folder = dirs.get("wav", os.path.expanduser("~"))
+        os.startfile(folder)
 
 
 # ── Giriş noktası ─────────────────────────────────────────────────────────────

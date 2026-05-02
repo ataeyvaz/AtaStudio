@@ -5,7 +5,7 @@
 #define AppName      "Ata Studio"
 #define AppVersion   "5.0"
 #define AppPublisher "Ata Studio"
-#define AppURL       "https://github.com/kullanici_adi/atastudio"
+#define AppURL       "https://github.com/ataeyvaz/AtaStudio"
 #define AppExeName   "AtaStudio.exe"
 
 [Setup]
@@ -24,7 +24,6 @@ SetupIconFile=eagle.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -36,25 +35,26 @@ Name: "turkish";  MessagesFile: "compiler:Languages\Turkish.isl"
 Name: "english";  MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon";    Description: "Masaüstü kısayolu oluştur";    GroupDescription: "Ek görevler:"; Flags: unchecked
+Name: "desktopicon";     Description: "Masaüstü kısayolu oluştur";  GroupDescription: "Ek görevler:"; Flags: unchecked
 Name: "quicklaunchicon"; Description: "Hızlı başlatma kısayolu";    GroupDescription: "Ek görevler:"; Flags: unchecked; OnlyBelowVersion: 6.1
 
 [Files]
 ; Ana exe
 Source: "dist\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
-; FFmpeg (varsa — yoksa kullanıcı kendisi kurar)
-Source: "ffmpeg\ffmpeg.exe";  DestDir: "{app}\ffmpeg"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "ffmpeg\ffprobe.exe"; DestDir: "{app}\ffmpeg"; Flags: ignoreversion skipifsourcedoesntexist
+; FFmpeg — projede mevcut
+Source: "ffmpeg.exe";  DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "ffprobe.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "ffplay.exe";  DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; Lisans ve readme
 Source: "LICENSE";   DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
-Name: "{group}\{#AppName}";                        Filename: "{app}\{#AppExeName}"
-Name: "{group}\{#AppName} Kaldır";                Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#AppName}";                  Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+Name: "{group}\{#AppName}";         Filename: "{app}\{#AppExeName}"
+Name: "{group}\{#AppName} Kaldır"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#AppName}";   Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: quicklaunchicon
 
 [Run]
@@ -67,20 +67,17 @@ Type: filesandordirs; Name: "{app}"
 // FFmpeg PATH'e ekle
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  FFmpegPath: string;
+  AppPath: string;
   CurrentPath: string;
 begin
   if CurStep = ssPostInstall then
   begin
-    FFmpegPath := ExpandConstant('{app}\ffmpeg');
-    if DirExists(FFmpegPath) then
+    AppPath := ExpandConstant('{app}');
+    RegQueryStringValue(HKCU, 'Environment', 'Path', CurrentPath);
+    if Pos(AppPath, CurrentPath) = 0 then
     begin
-      RegQueryStringValue(HKCU, 'Environment', 'Path', CurrentPath);
-      if Pos(FFmpegPath, CurrentPath) = 0 then
-      begin
-        RegWriteStringValue(HKCU, 'Environment', 'Path',
-          CurrentPath + ';' + FFmpegPath);
-      end;
+      RegWriteStringValue(HKCU, 'Environment', 'Path',
+        CurrentPath + ';' + AppPath);
     end;
   end;
 end;
