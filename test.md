@@ -7,24 +7,24 @@ Her maddeyi dene, sonucu işaretle: ✅ çalıştı · ❌ hata (ne gördüğün
 Hata olursa **ekrandaki metni birebir** (mesaj kutusu / durum çubuğu) yaz.
 
 ## 0. Hazırlık
-- [ ] Exe açılıyor mu? (ilk açılışta kurulum sihirbazı çıkarsa ayarları geç)
-- [ ] Sekmeler: Dönüştür · İndir · Keşfet · Kayıt · **Yazıya Dök** · Ayarlar — hepsi görünüyor mu?
-- [ ] Başlık 6.0 gösteriyor mu?
-- [ ] Not: İnternet gerekir (indirme, model indirme). Test sesi: kısa bir Türkçe MP3 (1–3 dk) hazır tut.
+- [✅] Exe açılıyor mu? (ilk açılışta kurulum sihirbazı çıkarsa ayarları geç)
+- [✅] Sekmeler: Dönüştür · İndir · Keşfet · Kayıt · **Yazıya Dök** · Ayarlar — hepsi görünüyor mu?
+- [✅] Başlık 6.0 gösteriyor mu?
+- [✅] Not: İnternet gerekir (indirme, model indirme). Test sesi: kısa bir Türkçe MP3 (1–3 dk) hazır tut.
 
 ## 1. Kayıt → MP3 (önceki düzeltme, hâlâ gerçek kayıtla denenmedi)
-- [ ] Kayıt sekmesi → format **MP3** → bir şey çalıp ~15 sn kaydet → Durdur
-- [ ] "MP3'e dönüştürülüyor" yazısı çıkıyor, bitince "Kaydedildi" diyalogu geliyor mu?
-- [ ] Çıkan dosya **.mp3** mü (WAV değil)? Klasör: `Documents\Ata Studio\mp3`. Çalınca ses var mı?
+- [✅] Kayıt sekmesi → format **MP3** → bir şey çalıp ~15 sn kaydet → Durdur
+- [✅] "MP3'e dönüştürülüyor" yazısı çıkıyor, bitince "Kaydedildi" diyalogu geliyor mu?
+- [✅] Çıkan dosya **.mp3** mü (WAV değil)? Klasör: `Documents\Ata Studio\mp3`. Çalınca ses var mı?
 - [ ] (İsteğe bağlı) Floating buton / tray ile kayıt başlat-durdur çalışıyor mu?
 - Beklenmeyen: "WAV olarak kaydedildi (MP3 dönüştürme başarısız)" uyarısı → ffmpeg exe içinde bulunamamış demektir, yaz.
 
 ## 2. İndirme + yt-dlp (YouTube 403 düzeltmesi)
-- [ ] İndir sekmesi → `https://www.youtube.com/watch?v=hUSgjqx2Uos` → MP3 → indir. 403 **çıkmamalı** (uzun video, birkaç dakika sürer).
-- [ ] Bitince "İndirme Tamamlandı" diyalogunda **📝 Yazıya Dök** düğmesi görünüyor mu?
-- [ ] Ayarlar → **yt-dlp Güncelleme** bölümü: "Yüklü sürüm" yazıyor mu?
-- [ ] **Denetle** → "✅ Güncel" ya da "🆕 Yeni sürüm var" yazıyor mu? (hata kutusu çıkarsa metni yaz)
-- [ ] (Yeni sürüm varsa) **Güncelle** → "yeniden başlatın" mesajı → uygulamayı kapat-aç → sürüm değişti mi?
+- [✅] İndir sekmesi → `https://www.youtube.com/watch?v=hUSgjqx2Uos` → MP3 → indir. 403 **çıkmamalı** (uzun video, birkaç dakika sürer).
+- [✅] Bitince "İndirme Tamamlandı" diyalogunda **📝 Yazıya Dök** düğmesi görünüyor mu?
+- [✅] Ayarlar → **yt-dlp Güncelleme** bölümü: "Yüklü sürüm" yazıyor mu?
+- [✅] **Denetle** → "✅ Güncel" ya da "🆕 Yeni sürüm var" yazıyor mu? (hata kutusu çıkarsa metni yaz)
+- [✅] (Yeni sürüm varsa) **Güncelle** → "yeniden başlatın" mesajı → uygulamayı kapat-aç → sürüm değişti mi?
 - [ ] **Sıfırla** → "Sıfırlandı" mesajı çıkıyor mu? (güncelleme yapılmadıysa "Sıfırlanacak güncelleme yok" normal)
 
 ## 3. Yazıya Dök — temel akış
@@ -54,7 +54,7 @@ Küçük bir MP3 ile (1–3 dk), **Hızlı** kalitede başla.
 - [ ] **İnternetsiz hata:** henüz inmemiş bir model seç (ör. Hassas), interneti kes → ▶ → "Model indirilemedi, internet bağlantınızı kontrol edin" kutusu çıkıyor mu? (interneti geri aç)
 
 ## 6. Kaydet / kopyala / aç
-- [ ] **Panoya kopyala** → Not Defteri'ne yapıştır → doğru mu?
+- [✅] **Panoya kopyala** → Not Defteri'ne yapıştır → doğru mu?
 - [ ] **.txt kaydet** → dosya `Documents\Ata Studio\metin` önerilen klasörde, Türkçe karakterler bozuk değil mi?
 - [ ] **.docx kaydet** → Word'de açılıyor, paragraflar doğru mu?
 - [ ] **.srt kaydet** → bir video oynatıcıda (ör. VLC) ses dosyasıyla altyazı olarak çalışıyor mu?
