@@ -3,7 +3,7 @@
 ; İndir: https://jrsoftware.org/isinfo.php
 
 #define AppName      "Ata Studio"
-#define AppVersion   "5.0"
+#define AppVersion   "6.0"
 #define AppPublisher "Ata Studio"
 #define AppURL       "https://github.com/ataeyvaz/AtaStudio"
 #define AppExeName   "AtaStudio.exe"

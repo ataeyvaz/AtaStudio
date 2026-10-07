@@ -50,3 +50,12 @@ models/
 
 # FFmpeg binary (kullanıcı kendisi kurar)
 ffmpeg/
+
+# FFmpeg binary dosyaları (kök dizin)
+ffmpeg.exe
+ffplay.exe
+ffprobe.exe
+
+# Hatalı adlı döküm dosyası
+*record*tab_dump.txt
+convert_log.txt

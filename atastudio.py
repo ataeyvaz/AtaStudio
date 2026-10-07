@@ -78,7 +78,7 @@ from PyQt6.QtWidgets import (
 # ── Sabitler ──────────────────────────────────────────────────────────────────
 LILYPOND    = r"C:\LilyPond\bin\lilypond.exe"
 APP_NAME    = "Ata Studio"
-APP_VERSION = "5.0"
+APP_VERSION = "6.0"
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".atastudio_config.json")
 
 
@@ -1452,8 +1452,28 @@ class ConvertTab(QWidget):
             "htdemucs" in cfg_model.lower())
         flay.addWidget(self.demucs_warn)
 
+        _SLOW_CPU_MODELS = ("htdemucs", "bs_roformer", "model_bs_roformer")
+
         def _on_model_changed(idx):
             fname = self.model_combo.currentData()
+            if any(k in fname.lower() for k in _SLOW_CPU_MODELS):
+                ret = QMessageBox.question(
+                    self,
+                    "Yavaş Model Uyarısı",
+                    "Bu model CPU'da çok yavaş çalışır (30-60 dk+).\n"
+                    "Devam etmek istiyor musunuz?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if ret == QMessageBox.No:
+                    # MDX-NET'e geri dön
+                    for i in range(self.model_combo.count()):
+                        if self.model_combo.itemData(i) == DEFAULT_SEP_MODEL:
+                            self.model_combo.blockSignals(True)
+                            self.model_combo.setCurrentIndex(i)
+                            self.model_combo.blockSignals(False)
+                            break
+                    fname = DEFAULT_SEP_MODEL
             cfg = load_config()
             cfg["sep_model"] = fname
             save_config(cfg)
@@ -2105,9 +2125,12 @@ class FloatingRecButton(QWidget):
 
 
 # ── Kayıt Sekmesi ─────────────────────────────────────────────────────────────
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
 class RecordWorker(QThread):
     status            = pyqtSignal(str)
     done              = pyqtSignal(str)
+    wav_fallback      = pyqtSignal(str)   # MP3 başarısız → WAV yolu
     error             = pyqtSignal(str)
     recording_stopped = pyqtSignal()   # kayıt bitti, dönüşüm başlıyor
 
@@ -2124,6 +2147,7 @@ class RecordWorker(QThread):
         self._frames     = []
 
     def run(self):
+        print("[DEBUG] RUN ÇAĞRILDI")
         try:
             import pyaudiowpatch as pyaudio
             import wave, datetime
@@ -2156,46 +2180,17 @@ class RecordWorker(QThread):
             ts        = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             base_name = self.filename if self.filename else f"kayit_{ts}"
             wav_path  = os.path.join(save_dir, f"{base_name}.wav")
+
+            # --- TEST MODU: sadece WAV kaydet, MP3 dönüştürme yok ---
+            print(f"[TEST] WAV yazılıyor... → {wav_path}")
             with wave.open(wav_path, "wb") as wf:
                 wf.setnchannels(ch)
                 wf.setsampwidth(2)
                 wf.setframerate(rate)
                 wf.writeframes(b"".join(self._frames))
-            final = wav_path
-            if self.fmt == "MP3":
-                try:
-                    mp3_dir  = self.out_dirs.get("mp3", save_dir)
-                    os.makedirs(mp3_dir, exist_ok=True)
-                    mp3_path = os.path.join(mp3_dir, f"{base_name}.mp3")
-                    # ffmpeg direkt subprocess ile çağır — pydub'a gerek yok
-                    ffmpeg_candidates = [
-                        os.path.join(os.path.dirname(sys.executable), "..", "..", "ffmpeg.exe"),
-                        os.path.join(os.path.expanduser("~"), "Desktop", "convert", "ffmpeg.exe"),
-                        r"C:\Users\Ata\Desktop\convert\ffmpeg.exe",
-                        "ffmpeg",
-                    ]
-                    ffmpeg_exe = "ffmpeg"
-                    for candidate in ffmpeg_candidates:
-                        if os.path.exists(candidate):
-                            ffmpeg_exe = candidate
-                            break
-                    result = subprocess.run(
-                        [ffmpeg_exe, "-y", "-i", wav_path,
-                         "-codec:a", "libmp3lame", "-q:a", "2",
-                         mp3_path],
-                        capture_output=True,
-                        timeout=120,
-                    )
-                    if result.returncode == 0 and os.path.exists(mp3_path):
-                        os.remove(wav_path)
-                        final = mp3_path
-                    else:
-                        self.status.emit("MP3 dönüşümü başarısız, WAV kaydedildi")
-                except subprocess.TimeoutExpired:
-                    self.status.emit("MP3 dönüşümü zaman aşımı, WAV kaydedildi")
-                except Exception as e:
-                    self.status.emit(f"MP3 dönüşümü başarısız: {e}")
-            self.done.emit(final)
+            wav_size = os.path.getsize(wav_path)
+            print(f"[TEST] WAV tamam: {wav_size/1024:.1f} KB → {wav_path}")
+            self.done.emit(wav_path)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -2430,14 +2425,18 @@ class RecordTab(QWidget):
         rec_name, max_secs = dlg.get_values()
         self._max_secs = max_secs
         fmt = "MP3" if self.fmt_group.checkedId() == 1 else "WAV"
+        self._current_fmt = fmt
         self._worker = RecordWorker(
             dev_index, dev_info, fmt, self.get_dirs(),
             filename=rec_name, max_seconds=max_secs)
         self._worker.status.connect(self._on_status)
         self._worker.recording_stopped.connect(self._on_recording_stopped)
         self._worker.done.connect(self._on_done)
+        self._worker.wav_fallback.connect(self._on_wav_fallback)
         self._worker.error.connect(self._on_error)
+        print(f"[DEBUG] WORKER BAŞLIYOR  fmt={fmt}  dev_index={dev_index}")
         self._worker.start()
+        print(f"[DEBUG] WORKER BAŞLADI  isRunning={self._worker.isRunning()}")
         self._elapsed = 0
         self._timer.start()
         self.start_btn.setEnabled(False)
@@ -2468,9 +2467,12 @@ class RecordTab(QWidget):
         self.status_msg.emit(msg)
 
     def _on_recording_stopped(self):
-        """Kayıt durdu, MP3 dönüşümü başlıyor — timer durdur."""
+        """Kayıt durdu, dönüşüm başlıyor — timer durdur."""
         self._timer.stop()
-        self.rec_dot.setText("⏳  MP3 dönüştürülüyor...")
+        if getattr(self, "_current_fmt", "MP3") == "MP3":
+            self.rec_dot.setText("⏳  MP3'e dönüştürülüyor...")
+        else:
+            self.rec_dot.setText("⏳  Kaydediliyor...")
         self.rec_dot.setStyleSheet(
             f"color:{TMID}; font-size:10pt; background:transparent;")
 
@@ -2489,6 +2491,24 @@ class RecordTab(QWidget):
         dlg = DownloadDoneDialog(fname, folder,
             f"{os.path.getsize(path)/1048576:.1f} MB", self)
         dlg.exec()
+
+    def _on_wav_fallback(self, path):
+        """MP3 dönüştürme başarısız, WAV olarak kaydedildi."""
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.dev_combo.setEnabled(True)
+        self.time_lbl.setText("00:00")
+        fname  = os.path.basename(path)
+        folder = os.path.dirname(path)
+        self.rec_dot.setText("⚠  WAV olarak kaydedildi")
+        self.rec_dot.setStyleSheet(
+            f"color:#B8860B; font-size:10pt; background:transparent;")
+        self.rec_status.setText(f"⚠  {fname}")
+        self.status_msg.emit(f"WAV olarak kaydedildi: {fname}")
+        self.progress_val.emit(100)
+        QMessageBox.warning(
+            self, "MP3 Dönüştürme Başarısız",
+            f"WAV olarak kaydedildi (MP3 dönüştürme başarısız)\n\n{fname}\n{folder}")
 
     def _on_error(self, msg):
         self.start_btn.setEnabled(True)
