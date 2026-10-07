@@ -2127,6 +2127,18 @@ class FloatingRecButton(QWidget):
 # ── Kayıt Sekmesi ─────────────────────────────────────────────────────────────
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
+def _find_ffmpeg():
+    """ffmpeg.exe: paketli exe → uygulama klasörü → PATH."""
+    dirs = []
+    if getattr(sys, "frozen", False):
+        dirs += [getattr(sys, "_MEIPASS", ""), os.path.dirname(sys.executable)]
+    dirs.append(_APP_DIR)
+    for d in dirs:
+        c = os.path.join(d, "ffmpeg.exe")
+        if d and os.path.exists(c):
+            return c
+    return shutil.which("ffmpeg")
+
 class RecordWorker(QThread):
     status            = pyqtSignal(str)
     done              = pyqtSignal(str)
@@ -2147,7 +2159,6 @@ class RecordWorker(QThread):
         self._frames     = []
 
     def run(self):
-        print("[DEBUG] RUN ÇAĞRILDI")
         try:
             import pyaudiowpatch as pyaudio
             import wave, datetime
@@ -2181,16 +2192,39 @@ class RecordWorker(QThread):
             base_name = self.filename if self.filename else f"kayit_{ts}"
             wav_path  = os.path.join(save_dir, f"{base_name}.wav")
 
-            # --- TEST MODU: sadece WAV kaydet, MP3 dönüştürme yok ---
-            print(f"[TEST] WAV yazılıyor... → {wav_path}")
             with wave.open(wav_path, "wb") as wf:
                 wf.setnchannels(ch)
                 wf.setsampwidth(2)
                 wf.setframerate(rate)
                 wf.writeframes(b"".join(self._frames))
-            wav_size = os.path.getsize(wav_path)
-            print(f"[TEST] WAV tamam: {wav_size/1024:.1f} KB → {wav_path}")
-            self.done.emit(wav_path)
+
+            final = wav_path
+            if self.fmt == "MP3":
+                try:
+                    ffmpeg_exe = _find_ffmpeg()
+                    if not ffmpeg_exe:
+                        raise FileNotFoundError("ffmpeg bulunamadı")
+                    mp3_dir = self.out_dirs.get("mp3", save_dir)
+                    os.makedirs(mp3_dir, exist_ok=True)
+                    mp3_path = os.path.join(mp3_dir, f"{base_name}.mp3")
+                    result = subprocess.run(
+                        [ffmpeg_exe, "-y", "-i", wav_path,
+                         "-codec:a", "libmp3lame", "-q:a", "2", mp3_path],
+                        capture_output=True, timeout=600,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    )
+                    if result.returncode == 0 and os.path.exists(mp3_path):
+                        os.remove(wav_path)
+                        final = mp3_path
+                    else:
+                        self.status.emit("MP3 dönüşümü başarısız, WAV kaydedildi")
+                        self.wav_fallback.emit(wav_path)
+                        return
+                except Exception as e:
+                    self.status.emit(f"MP3 dönüşümü başarısız: {e}")
+                    self.wav_fallback.emit(wav_path)
+                    return
+            self.done.emit(final)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -2434,9 +2468,7 @@ class RecordTab(QWidget):
         self._worker.done.connect(self._on_done)
         self._worker.wav_fallback.connect(self._on_wav_fallback)
         self._worker.error.connect(self._on_error)
-        print(f"[DEBUG] WORKER BAŞLIYOR  fmt={fmt}  dev_index={dev_index}")
         self._worker.start()
-        print(f"[DEBUG] WORKER BAŞLADI  isRunning={self._worker.isRunning()}")
         self._elapsed = 0
         self._timer.start()
         self.start_btn.setEnabled(False)
