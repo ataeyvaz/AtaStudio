@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ata Studio v5.0 — PyQt6 Edition
+Ata Studio v6.0 — PyQt6 Edition
 MP3→MIDI Dönüştürücü + YouTube/Spotify/SoundCloud İndirici
 """
 import os, sys, json, threading, tempfile, shutil, subprocess, re, webbrowser
@@ -1557,10 +1557,10 @@ class ConvertTab(QWidget):
                     "Yavaş Model Uyarısı",
                     "Bu model CPU'da çok yavaş çalışır (30-60 dk+).\n"
                     "Devam etmek istiyor musunuz?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No,
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
                 )
-                if ret == QMessageBox.No:
+                if ret == QMessageBox.StandardButton.No:
                     # MDX-NET'e geri dön
                     for i in range(self.model_combo.count()):
                         if self.model_combo.itemData(i) == DEFAULT_SEP_MODEL:

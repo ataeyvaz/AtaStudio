@@ -16,14 +16,16 @@ Proje: PyQt6 masaüstü uygulaması (Windows), tek dosya `atastudio.py` (~3350 s
 | Canlı yayın (LiveStreamTab) | | Kodda var; kapsamı belirsiz | ❓ |
 | Kurulum paketi | Inno Setup ile Setup.exe | `setup.iss` v6.0, `installer/` içinde v5.0 ve v6.0 Setup.exe mevcut | ✅ |
 
-Son commit: `2a12a0a` (2026-10-07, push edildi) · Testler: yok (otomatik test dosyası bulunmuyor).
+Son commit: `main` üzerinde (push edilmedi: GitHub'da son `83fd0ac`) · Testler: yok (otomatik test dosyası bulunmuyor).
 
 ## 2. Sıradaki işler (öncelik sırasıyla)
-0. **Whisper "Yazıya Dök" sekmesi** (`feature/transcribe`): faster-whisper, ayrı süreç, TXT/DOCX/SRT, Sözcük ile aç, İndirici'den tek tık. Ayrıntı için konuşma kararı: dil Türkçe varsayılan, Hızlı/Dengeli/Hassas = base/small/medium.
-1. **Kayıt MP3 dönüşümünü gerçek kayıtla dene** (2026-10-07'de geri açıldı: `_find_ffmpeg()` ile ffmpeg bulunuyor, başarısızsa WAV'a düşüp uyarı veriyor; debug print'ler silindi). Paketli exe'de ffmpeg'in bulunduğunu da doğrula.
+0. **Whisper → Sözcük projesine taşınacak** (Ata Studio'dan ÇIKARILDI, kullanıcı kararı). Hazır motor arşivde: `git show whisper-arsiv:transcribe_engine.py` (Qt'siz; ayrı süreç, VAD, int8, paragraf/SRT/DOCX). Sözcük'ün yolu bilinmiyor — kullanıcıdan alınacak. Formatlar: mp3, wav, mp4 + m4a/aac/ogg/opus/flac/webm/mkv/mov/avi (PyAV/FFmpeg hepsini çözer).
+1. ~~Kayıt MP3~~ — kullanıcı exe'de denedi ✅ (2026-10-07).
 2. ~~ffmpeg yolu~~ — sabit yol kaldırıldı, `_find_ffmpeg()` (exe içi → uygulama klasörü → PATH).
-3. **Sürüm tutarsızlığı:** `APP_VERSION = "6.0"` ama dosya başlığı, `build.py` ve README hâlâ "v5.0". Hepsini 6.0'a çek.
-4. **README'yi güncelle:** loopback kayıt, gömülü browser, floating buton, tray özellikleri README'de yok.
+3. ~~Sürüm tutarsızlığı~~ — başlık, `build.py`, README 6.0'a çekildi.
+4. ~~README~~ — kayıt ve yt-dlp güncelleme eklendi; gömülü browser/floating buton ayrıntısı eksik kalabilir.
+4b. **Exe yeniden build edilmeli:** şu an `dist\AtaStudio.exe` Whisper'lı dalın build'i. Whisper'sız (main) build için `python build.py`; önceki build `installer\AtaStudio_onceki_build.exe`. venv'de faster-whisper/python-docx kurulu kalıyor (zararsız; istenirse `pip uninstall faster-whisper python-docx`).
+4c. Diğer platformlarda (YouTube dışı) indirme denenmedi.
 5. **CLAUDE.md oluştur** (kalıcı kurallar: dosya yapısı, yasaklar).
 6. WebEngine önbellek hatasını incele (`convert_log.txt`).
 
@@ -43,7 +45,9 @@ Son commit: `2a12a0a` (2026-10-07, push edildi) · Testler: yok (otomatik test d
 - 2026-10-07: YouTube 403 hatası → sebep eski yt-dlp (2026.03.17). venv ve requirements.txt 2026.8.19'a çekildi; uygulamanın akışıyla uzun podcast videosu MP3'e indirildi. Exe'nin içindeki yt-dlp eski kalır, yeniden build gerekir.
 
 - 2026-10-07: Ayarlar'a yt-dlp güncelleme eklendi (Denetle/Güncelle/Sıfırla). Exe'de güncelleme `%APPDATA%\AtaStudio\ytdlp` içine açılır ve gömülü sürümden yeniyse açılışta öne alınır (mini PyInstaller denemesiyle doğrulandı). Kaynaktan çalışırken `pip install -U` kullanılır.
-- 2026-10-07: Whisper (yazıya dök) `feature/transcribe` dalında geliştirilecek; main'e birleştirmeden önce kullanıcı onayı şart. Geri dönüş noktası: `v6.0-oncesi-whisper` etiketi.
+- 2026-10-07: Whisper (yazıya dök) Ata Studio'ya EKLENMEYECEK — uygulamayı şişirir (+~130 MB, ayrıca ctranslate2/av). Kullanıcı Ata Studio'da çalıştığını gördü (test başarılı), sonra Sözcük projesine taşımaya karar verdi. Çalışma `feature/transcribe` dalında ve `whisper-arsiv` etiketinde saklı (main'e birleştirilmedi). Geri dönüş noktası: `v6.0-oncesi-whisper`.
+- 2026-10-07: Kullanıcı testi (exe): açılış, sekmeler, kayıt→MP3, YouTube MP3 indirme (403 yok), yt-dlp Denetle/Güncelle, Whisper yazıya dök ✅. Diğer platformlar denenmedi.
+- 2026-10-07: PyQt6'da kısa enum adları (`QMessageBox.Yes`) çalışmaz → `QMessageBox.StandardButton.Yes` kullan (yavaş model uyarısı bu yüzden çöküyordu, düzeltildi).
 
 ## 5. Açık sorular / bekleyenler
 - LiveStreamTab'ın amacı ve tamamlanma durumu (belirsiz).
