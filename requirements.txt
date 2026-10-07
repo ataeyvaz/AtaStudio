@@ -1,5 +1,5 @@
 PyQt6>=6.4.0
-yt-dlp>=2026.3.17
+yt-dlp>=2026.8.19
 curl_cffi>=0.10.0,<0.15
 mutagen>=1.47.0
 requests>=2.33.0

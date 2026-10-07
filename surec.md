@@ -19,6 +19,7 @@ Proje: PyQt6 masaüstü uygulaması (Windows), tek dosya `atastudio.py` (~3350 s
 Son commit: `2a12a0a` (2026-10-07, push edildi) · Testler: yok (otomatik test dosyası bulunmuyor).
 
 ## 2. Sıradaki işler (öncelik sırasıyla)
+0. **Whisper "Yazıya Dök" sekmesi** (`feature/transcribe`): faster-whisper, ayrı süreç, TXT/DOCX/SRT, Sözcük ile aç, İndirici'den tek tık. Ayrıntı için konuşma kararı: dil Türkçe varsayılan, Hızlı/Dengeli/Hassas = base/small/medium.
 1. **Kayıt MP3 dönüşümünü gerçek kayıtla dene** (2026-10-07'de geri açıldı: `_find_ffmpeg()` ile ffmpeg bulunuyor, başarısızsa WAV'a düşüp uyarı veriyor; debug print'ler silindi). Paketli exe'de ffmpeg'in bulunduğunu da doğrula.
 2. ~~ffmpeg yolu~~ — sabit yol kaldırıldı, `_find_ffmpeg()` (exe içi → uygulama klasörü → PATH).
 3. **Sürüm tutarsızlığı:** `APP_VERSION = "6.0"` ama dosya başlığı, `build.py` ve README hâlâ "v5.0". Hepsini 6.0'a çek.
@@ -39,6 +40,11 @@ Son commit: `2a12a0a` (2026-10-07, push edildi) · Testler: yok (otomatik test d
 
 - 2026-10-07: Programın amacı MP3; kayıtta MP3 dönüşümü zorunlu, TEST MODU kaldırıldı — kullanıcı kararı.
 
+- 2026-10-07: YouTube 403 hatası → sebep eski yt-dlp (2026.03.17). venv ve requirements.txt 2026.8.19'a çekildi; uygulamanın akışıyla uzun podcast videosu MP3'e indirildi. Exe'nin içindeki yt-dlp eski kalır, yeniden build gerekir.
+
+- 2026-10-07: Ayarlar'a yt-dlp güncelleme eklendi (Denetle/Güncelle/Sıfırla). Exe'de güncelleme `%APPDATA%\AtaStudio\ytdlp` içine açılır ve gömülü sürümden yeniyse açılışta öne alınır (mini PyInstaller denemesiyle doğrulandı). Kaynaktan çalışırken `pip install -U` kullanılır.
+- 2026-10-07: Whisper (yazıya dök) `feature/transcribe` dalında geliştirilecek; main'e birleştirmeden önce kullanıcı onayı şart. Geri dönüş noktası: `v6.0-oncesi-whisper` etiketi.
+
 ## 5. Açık sorular / bekleyenler
 - LiveStreamTab'ın amacı ve tamamlanma durumu (belirsiz).
 - Çalışma dizininde bozuk adlı boş dosya var: `C:UsersAtaDesktoprecordtab_dump.txt`. Silinebilir (kullanıcı onayıyla).
@@ -54,6 +60,7 @@ Son commit: `2a12a0a` (2026-10-07, push edildi) · Testler: yok (otomatik test d
 | Ayar dosyası | `.atastudio_config.json` (gitignore'da) |
 
 ## 7. Bilinen sorunlar ve tuzaklar
+- YouTube indirmeleri yt-dlp eskidikçe 403 verir; sık güncelle (`pip install -U yt-dlp`) ve exe'yi yeniden build et. yt-dlp ayrıca JS runtime (deno) önerir; şu an uyarı veriyor ama indirme çalışıyor.
 - `convert_log.txt` (UTF-16): WebEngine "Unable to move the cache / Gpu Cache Creation failed: Erişim engellendi (0x5)" — önbellek klasörü yazma izni sorunu.
 - Yavaş modeller (htdemucs, bs_roformer) CPU'da 30-60 dk+ sürer; UI uyarı veriyor.
 - `ffmpeg*.exe` kök dizinde duruyor ama repoda yok; yeni makinede ffmpeg elle kurulmalı (README de öyle diyor).

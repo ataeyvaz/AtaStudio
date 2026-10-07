@@ -81,6 +81,43 @@ APP_NAME    = "Ata Studio"
 APP_VERSION = "6.0"
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".atastudio_config.json")
 
+# ── yt-dlp kullanıcı güncellemesi ────────────────────────────────────────────
+# Exe'de yt-dlp gömülüdür; güncelleme buraya açılır ve açılışta öne alınır.
+YTDLP_DIR = os.path.join(
+    os.environ.get("APPDATA") or os.path.expanduser("~"), "AtaStudio", "ytdlp")
+
+def _ver_tuple(v):
+    return tuple(int(x) for x in re.findall(r"\d+", str(v).split("+")[0])[:3])
+
+def _read_ytdlp_dir_version(base=None):
+    """Güncelleme klasöründeki yt-dlp sürümü (yoksa None)."""
+    try:
+        base = base or YTDLP_DIR
+        with open(os.path.join(base, "yt_dlp", "version.py"), encoding="utf-8") as f:
+            return re.search(r"__version__\s*=\s*['\"]([^'\"]+)", f.read()).group(1)
+    except Exception:
+        return None
+
+def _activate_ytdlp_override():
+    """Exe: güncelleme klasöründeki yt-dlp gömülü olandan yeniyse onu kullan."""
+    if not getattr(sys, "frozen", False):
+        return
+    new = _read_ytdlp_dir_version()
+    if not new:
+        return
+    try:
+        import yt_dlp.version as _bv
+        if _ver_tuple(new) <= _ver_tuple(_bv.__version__):
+            return
+    except Exception:
+        pass
+    for m in [m for m in sys.modules if m == "yt_dlp" or m.startswith("yt_dlp.")]:
+        del sys.modules[m]
+    if YTDLP_DIR not in sys.path:
+        sys.path.insert(0, YTDLP_DIR)
+
+_activate_ytdlp_override()
+
 
 # ── Kartal görseli (base64 PNG) ─────────────────────────────────────────────
 EAGLE_B64 = "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"
@@ -861,6 +898,64 @@ def download_url(url, out_dirs, fmt, quality, progress_cb, log_cb):
 
 
 # ── QThread İşçileri ──────────────────────────────────────────────────────────
+class YtdlpUpdateWorker(QThread):
+    """yt-dlp sürüm denetimi / güncelleme (PyPI)."""
+    finished_ok = pyqtSignal(str, str)   # (mod, sürüm)
+    failed      = pyqtSignal(str)
+
+    def __init__(self, mode, proxy=""):
+        super().__init__()
+        self.mode  = mode      # "check" | "update"
+        self.proxy = proxy
+
+    def _latest(self):
+        import requests
+        proxies = {"http": self.proxy, "https": self.proxy} if self.proxy else None
+        r = requests.get("https://pypi.org/pypi/yt-dlp/json", timeout=20, proxies=proxies)
+        r.raise_for_status()
+        data  = r.json()
+        wheel = next(u for u in data["urls"]
+                     if u["packagetype"] == "bdist_wheel" and u["filename"].endswith("none-any.whl"))
+        return data["info"]["version"], wheel, proxies
+
+    def run(self):
+        try:
+            latest, wheel, proxies = self._latest()
+            if self.mode == "check":
+                self.finished_ok.emit("check", latest)
+                return
+            if not getattr(sys, "frozen", False):
+                subprocess.check_call(
+                    [sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "-q"],
+                    timeout=300,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                self.finished_ok.emit("update", latest)
+                return
+            import requests, hashlib, zipfile, io
+            r = requests.get(wheel["url"], timeout=120, proxies=proxies)
+            r.raise_for_status()
+            if hashlib.sha256(r.content).hexdigest() != wheel["digests"]["sha256"]:
+                raise RuntimeError("İndirilen dosyanın SHA256 özeti uyuşmuyor")
+            tmp = YTDLP_DIR + ".new"
+            shutil.rmtree(tmp, ignore_errors=True)
+            with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                members = [m for m in z.namelist() if m.startswith("yt_dlp/")]
+                if not members:
+                    raise RuntimeError("Wheel içinde yt_dlp paketi bulunamadı")
+                z.extractall(tmp, members)
+            if _read_ytdlp_dir_version(tmp) != latest:
+                raise RuntimeError("Açılan paketin sürümü doğrulanamadı")
+            old = YTDLP_DIR + ".old"
+            shutil.rmtree(old, ignore_errors=True)
+            if os.path.isdir(YTDLP_DIR):
+                os.replace(YTDLP_DIR, old)
+            os.replace(tmp, YTDLP_DIR)
+            shutil.rmtree(old, ignore_errors=True)
+            self.finished_ok.emit("update", latest)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class ConvertWorker(QThread):
     progress = pyqtSignal(int, str)
     log      = pyqtSignal(str)
@@ -2968,6 +3063,30 @@ class SettingsTab(QWidget):
 
         lay.addWidget(section3)
 
+        # ── yt-dlp Güncelleme ─────────────────────────────────────────────
+        section4 = self._make_section("⬇  yt-dlp Güncelleme  (İndirme / 403 hataları için)")
+        s4lay    = section4.layout()
+        s4lay.addWidget(_label(
+            "YouTube sık değişir; indirme 403 verirse yt-dlp'yi güncelleyin. "
+            "Güncelleme sonrası uygulamayı yeniden başlatın.",
+            size=9, color=TLT, parent=content))
+        self._yt_ver_lbl = _label("", size=9, color=TXT, parent=content)
+        s4lay.addWidget(self._yt_ver_lbl)
+        yt_row = QHBoxLayout()
+        self._yt_check_btn  = _btn("🔍  Denetle", "navy")
+        self._yt_update_btn = _btn("⬇  Güncelle", "gold")
+        self._yt_reset_btn  = _btn("↩  Sıfırla", "navy")
+        for b in (self._yt_check_btn, self._yt_update_btn, self._yt_reset_btn):
+            b.setFixedHeight(30)
+            yt_row.addWidget(b)
+        yt_row.addStretch()
+        self._yt_check_btn.clicked.connect(lambda: self._yt_run("check"))
+        self._yt_update_btn.clicked.connect(lambda: self._yt_run("update"))
+        self._yt_reset_btn.clicked.connect(self._yt_reset)
+        s4lay.addLayout(yt_row)
+        lay.addWidget(section4)
+        self._yt_refresh_label()
+
         # ── Kayıt Format Ayarı ────────────────────────────────────────────────
         rec_frame = _panel_frame()
         rec_lay   = QVBoxLayout(rec_frame)
@@ -3021,6 +3140,60 @@ class SettingsTab(QWidget):
 
         lay.addWidget(cache_frame)
         lay.addStretch()
+
+    def _yt_loaded_version(self):
+        try:
+            import yt_dlp.version as v
+            return v.__version__
+        except Exception:
+            return "?"
+
+    def _yt_refresh_label(self, extra=""):
+        txt = f"Yüklü sürüm: {self._yt_loaded_version()}"
+        if getattr(sys, "frozen", False):
+            ov = _read_ytdlp_dir_version()
+            txt += f"   ·   Kullanıcı güncellemesi: {ov or 'yok'}"
+        self._yt_ver_lbl.setText(txt + (f"\n{extra}" if extra else ""))
+
+    def _yt_run(self, mode):
+        for b in (self._yt_check_btn, self._yt_update_btn, self._yt_reset_btn):
+            b.setEnabled(False)
+        self._yt_ver_lbl.setText(
+            "Denetleniyor..." if mode == "check" else "İndiriliyor, lütfen bekleyin...")
+        self._yt_worker = YtdlpUpdateWorker(mode, self.get_cfg().get("proxy", ""))
+        self._yt_worker.finished_ok.connect(self._yt_done)
+        self._yt_worker.failed.connect(self._yt_failed)
+        self._yt_worker.start()
+
+    def _yt_enable(self):
+        for b in (self._yt_check_btn, self._yt_update_btn, self._yt_reset_btn):
+            b.setEnabled(True)
+
+    def _yt_done(self, mode, latest):
+        self._yt_enable()
+        cur = self._yt_loaded_version()
+        if mode == "check":
+            if cur != "?" and _ver_tuple(latest) <= _ver_tuple(cur):
+                self._yt_refresh_label(f"✅ Güncel (en son: {latest})")
+            else:
+                self._yt_refresh_label(f"🆕 Yeni sürüm var: {latest}  — «Güncelle» ile yükleyin")
+        else:
+            self._yt_refresh_label(f"✅ {latest} yüklendi — uygulamayı yeniden başlatın")
+            QMessageBox.information(self, "yt-dlp güncellendi",
+                f"yt-dlp {latest} yüklendi.\nDeğişikliğin geçerli olması için "
+                "uygulamayı kapatıp yeniden açın.")
+
+    def _yt_failed(self, msg):
+        self._yt_enable()
+        self._yt_refresh_label()
+        QMessageBox.warning(self, "yt-dlp güncelleme hatası", msg)
+
+    def _yt_reset(self):
+        if not os.path.isdir(YTDLP_DIR):
+            QMessageBox.information(self, "yt-dlp", "Sıfırlanacak kullanıcı güncellemesi yok.")
+            return
+        shutil.rmtree(YTDLP_DIR, ignore_errors=True)
+        self._yt_refresh_label("↩ Sıfırlandı — yeniden başlatınca uygulamayla gelen sürüm kullanılır")
 
     def _save_proxy(self):
         cfg = self.get_cfg()
