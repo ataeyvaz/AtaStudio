@@ -1,4 +1,4 @@
-# 🦅 Ata Studio v5.0
+# 🦅 Ata Studio v6.0
 
 **MP3 → MIDI · XML · PDF Dönüştürücü & 1740+ Platform Evrensel İndirici**
 
@@ -27,16 +27,31 @@
 - Clipboard monitor — URL kopyaladığında **otomatik** algılar
 - Platform hızlı erişim butonları
 
+### ⏺ Kayıt
+- Sistem sesini (loopback) MP3 / WAV olarak kaydet; süre ve isim seç
+- Floating kayıt butonu ve system tray
+
+### 📝 Yazıya Dök (Whisper, tamamen çevrimdışı)
+- Ses/video dosyasını (mp3, wav, m4a, ogg, flac, mp4, webm) seç veya sürükle-bırak
+- Dil: Türkçe (varsayılan), English, Otomatik · Kalite: Hızlı / Dengeli / Hassas (`base` / `small` / `medium`)
+- Duraklamalarda paragraf bölme, isteğe bağlı `[SS:DD:SS]` zaman damgası, ilerleme + kalan süre, iptalde metin korunur
+- Çıktı: panoya kopyala, `.txt`, `.docx`, `.srt`; Not Defteri / Word / Sözcük ile aç
+- İndirme bitince tek tıkla "Yazıya Dök"
+- Modeller ilk kullanımda bir kez indirilir (~145 MB / ~480 MB / ~1,5 GB); ses ve metin bilgisayardan çıkmaz
+- Ağır iş ayrı, düşük öncelikli bir süreçte çalışır; arayüz donmaz
+
 ### ⚙️ Ayarlar
 - Çıktı klasörü yapılandırması
 - Proxy ayarı (engelli siteler için)
+- **yt-dlp güncelleme:** sürüm denetimi, tek tıkla güncelleme ve sıfırlama (indirme 403 verirse çözüm)
+- Sözcük bağlantısı (başlatıcı yolu)
 
 ---
 
 ## 🚀 Kurulum
 
 ### Hazır Exe (Windows — Önerilen)
-1. [Releases](../../releases) sayfasından `AtaStudio_v5.0_Setup.exe` indir
+1. [Releases](../../releases) sayfasından `AtaStudio_v6.0_Setup.exe` indir
 2. Kurulum sihirbazını çalıştır
 3. Başlat!
 

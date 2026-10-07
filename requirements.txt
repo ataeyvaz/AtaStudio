@@ -6,3 +6,5 @@ requests>=2.33.0
 websockets>=14.0
 certifi>=2024.2.2
 audio-separator>=0.17.0
+faster-whisper>=1.1.0
+python-docx>=1.1.0

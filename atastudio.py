@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
-Ata Studio v5.0 — PyQt6 Edition
-MP3→MIDI Dönüştürücü + YouTube/Spotify/SoundCloud İndirici
+Ata Studio v6.0 — PyQt6 Edition
+MP3→MIDI Dönüştürücü + İndirici + Kayıt + Whisper ile Yazıya Dök
 """
-import os, sys, json, threading, tempfile, shutil, subprocess, re, webbrowser
+import os, sys, json, threading, tempfile, shutil, subprocess, re, webbrowser, time
 from pathlib import Path
+
+# Yazıya dökme işçisi (ayrı süreç): Qt/yt-dlp vb. yüklenmeden hemen çalışır
+if len(sys.argv) > 1 and sys.argv[1] == "--transcribe-worker":
+    import transcribe_engine
+    transcribe_engine.worker_main(sys.argv[2:])
+    sys.exit(0)
 
 # ── DNS override — sistem DNS yerine Google/Cloudflare kullan ───────────────
 def _patch_dns():
@@ -129,6 +135,7 @@ DEFAULT_DIRS = {
     "midi": os.path.join(DEFAULT_BASE, "midi"),
     "pdf":  os.path.join(DEFAULT_BASE, "pdf"),
     "xml":  os.path.join(DEFAULT_BASE, "xml"),
+    "metin": os.path.join(DEFAULT_BASE, "metin"),
 }
 
 CHANNELS = [
@@ -380,6 +387,7 @@ def create_dirs(base):
         "midi": os.path.join(base, "midi"),
         "pdf":  os.path.join(base, "pdf"),
         "xml":  os.path.join(base, "xml"),
+        "metin": os.path.join(base, "metin"),
     }
     for d in dirs.values():
         os.makedirs(d, exist_ok=True)
@@ -1050,11 +1058,12 @@ def _h_line(parent=None):
 
 # ── İndirme Tamamlandı Dialogu ────────────────────────────────────────────────
 class DownloadDoneDialog(QDialog):
-    def __init__(self, fname, folder, fsize, parent=None):
+    def __init__(self, fname, folder, fsize, parent=None, on_transcribe=None):
         super().__init__(parent)
         self.setWindowTitle("İndirme Tamamlandı")
         self.setFixedSize(420, 260)
         self.setModal(True)
+        self._on_transcribe = on_transcribe
         self._build(fname, folder, fsize)
 
     def _build(self, fname, folder, fsize):
@@ -1103,11 +1112,19 @@ class DownloadDoneDialog(QDialog):
         close_btn = _btn("Kapat")
         close_btn.clicked.connect(self.accept)
         btn_row.addWidget(open_btn)
+        if self._on_transcribe:
+            tr_btn = _btn("📝  Yazıya Dök", "navy")
+            tr_btn.clicked.connect(self._transcribe_clicked)
+            btn_row.addWidget(tr_btn)
         btn_row.addStretch()
         btn_row.addWidget(close_btn)
         blay.addLayout(btn_row)
 
         lay.addWidget(body, 1)
+
+    def _transcribe_clicked(self):
+        self.accept()
+        self._on_transcribe()
 
     def _open_folder(self, folder):
         if sys.platform == "win32":
@@ -1557,10 +1574,10 @@ class ConvertTab(QWidget):
                     "Yavaş Model Uyarısı",
                     "Bu model CPU'da çok yavaş çalışır (30-60 dk+).\n"
                     "Devam etmek istiyor musunuz?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No,
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
                 )
-                if ret == QMessageBox.No:
+                if ret == QMessageBox.StandardButton.No:
                     # MDX-NET'e geri dön
                     for i in range(self.model_combo.count()):
                         if self.model_combo.itemData(i) == DEFAULT_SEP_MODEL:
@@ -1803,6 +1820,7 @@ class ConvertTab(QWidget):
 class DownloadTab(QWidget):
     status_msg   = pyqtSignal(str)
     progress_val = pyqtSignal(int)
+    transcribe_requested = pyqtSignal(str)   # indirilen dosyayı "Yazıya Dök"e gönder
 
     def __init__(self, get_dirs, parent=None):
         super().__init__(parent)
@@ -1982,7 +2000,11 @@ class DownloadTab(QWidget):
                 fsize_b = os.path.getsize(fpath)
                 fsize_s = (f"{fsize_b/1048576:.1f} MB" if fsize_b > 1048576
                            else f"{fsize_b/1024:.0f} KB")
-                dlg = DownloadDoneDialog(fname, out_dir, fsize_s, self)
+                is_media = os.path.splitext(fname)[1].lower().lstrip(".") in TRANSCRIBE_EXTS
+                dlg = DownloadDoneDialog(
+                    fname, out_dir, fsize_s, self,
+                    on_transcribe=(lambda fp=fpath: self.transcribe_requested.emit(fp))
+                    if is_media else None)
                 dlg.exec()
 
         def on_error(msg):
@@ -2963,6 +2985,521 @@ class LiveStreamTab(QWidget):
             pass
 
 
+# ── Yazıya Dök (faster-whisper) ───────────────────────────────────────────────
+TRANSCRIBE_EXTS = ("mp3", "wav", "m4a", "ogg", "flac", "mp4", "webm")
+
+
+def _launch_external(launcher, file_path, python_path=""):
+    """Sözcük gibi harici bir başlatıcıyı dosya yoluyla aç (.bat/.cmd/.py/.exe)."""
+    ext = os.path.splitext(launcher)[1].lower()
+    cwd = os.path.dirname(launcher) or None
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if ext in (".bat", ".cmd"):
+        cmd = ["cmd", "/c", launcher, file_path]
+    elif ext in (".py", ".pyw"):
+        py = python_path
+        if not py and not getattr(sys, "frozen", False):
+            py = sys.executable          # exe'de sys.executable = AtaStudio.exe, kullanılmaz
+        py = py or shutil.which("pythonw") or shutil.which("python")
+        if not py:
+            raise RuntimeError(
+                "Python bulunamadı. Ayarlar > Sözcük Bağlantısı bölümünden "
+                "python.exe / pythonw.exe yolunu seçin.")
+        cmd = [py, launcher, file_path]
+    else:
+        cmd = [launcher, file_path]
+    subprocess.Popen(cmd, cwd=cwd, creationflags=flags)
+
+
+class TranscribeRunner(QThread):
+    """Whisper işçisini AYRI SÜREÇTE çalıştırır (düşük öncelik); olayları sinyale çevirir."""
+    status = pyqtSignal(str)
+    info   = pyqtSignal(float, str)           # süre(sn), dil
+    seg    = pyqtSignal(float, float, str)    # başlangıç, bitiş, metin
+    ended  = pyqtSignal(str, str)             # durum: done|cancelled|net|error, mesaj
+
+    def __init__(self, audio, lang, quality):
+        super().__init__()
+        self.audio, self.lang, self.quality = audio, lang, quality
+        self._flag = os.path.join(
+            tempfile.gettempdir(), f"atastudio_cancel_{os.getpid()}_{id(self)}.flag")
+        self._proc = None
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+        try:
+            open(self._flag, "w").close()
+        except OSError:
+            pass
+        # Çalışan segment uzun sürerse zorla sonlandır (alt süreçler dahil)
+        threading.Timer(20, self._kill_tree).start()
+
+    def _kill_tree(self):
+        p = self._proc
+        if p is not None and p.poll() is None:
+            subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"],
+                           capture_output=True,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+    def run(self):
+        import transcribe_engine as te
+        model, beam, _ = te.QUALITY_MODELS[self.quality]
+        base = [sys.executable] if getattr(sys, "frozen", False) \
+            else [sys.executable, os.path.abspath(__file__)]
+        cmd = base + ["--transcribe-worker", self.audio, self.lang, model,
+                      str(beam), self._flag, str(os.getpid())]
+        env = os.environ.copy()
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"   # onefile exe: yeni örnek gibi aç
+        errf = tempfile.TemporaryFile()
+        result = None
+        try:
+            if os.path.exists(self._flag):
+                os.remove(self._flag)
+            self._proc = subprocess.Popen(
+                cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=errf,
+                env=env,
+                creationflags=0x00004000 | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            for raw in self._proc.stdout:
+                try:
+                    ev = json.loads(raw.decode("utf-8", "replace"))
+                except ValueError:
+                    continue
+                t = ev.get("t")
+                if t == "status":
+                    self.status.emit(ev["m"])
+                elif t == "info":
+                    self.info.emit(ev["dur"], ev.get("lang", ""))
+                elif t == "seg":
+                    self.seg.emit(ev["s"], ev["e"], ev["x"])
+                elif t in ("done", "cancelled"):
+                    result = (t, "")
+                elif t == "err":
+                    result = ("net" if ev.get("k") == "net" else "error", ev.get("m", ""))
+            self._proc.wait()
+            if result is None:
+                if self._cancelled:
+                    result = ("cancelled", "")
+                else:
+                    errf.seek(0)
+                    tail = errf.read()[-400:].decode("utf-8", "replace").strip()
+                    result = ("error", tail or f"İşlem beklenmedik şekilde kapandı "
+                                              f"(kod {self._proc.returncode})")
+        except Exception as e:
+            result = ("error", str(e))
+        finally:
+            errf.close()
+            try:
+                os.remove(self._flag)
+            except OSError:
+                pass
+        self.ended.emit(*result)
+
+
+class TranscribeTab(QWidget):
+    status_msg   = pyqtSignal(str)
+    progress_val = pyqtSignal(int)
+
+    def __init__(self, get_dirs, get_cfg, save_cfg_fn, parent=None):
+        super().__init__(parent)
+        self.get_dirs, self.get_cfg, self.save_cfg_fn = get_dirs, get_cfg, save_cfg_fn
+        self._audio      = ""
+        self._segments   = []       # [(start, end, text)]
+        self._runner     = None
+        self._dur        = 0.0
+        self._t0         = 0.0
+        self._programmatic = False
+        self._dirty      = False    # kullanıcı metni elle düzenledi mi
+        self._saved      = {}       # ".txt"/".docx" → bu oturumda yazılan yol
+        self._render_timer = QTimer(self)
+        self._render_timer.setSingleShot(True)
+        self._render_timer.setInterval(250)
+        self._render_timer.timeout.connect(self._render)
+        self.setAcceptDrops(True)
+        self._build()
+
+    # ── Arayüz ────────────────────────────────────────────────────────────
+    def _build(self):
+        import transcribe_engine as te
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 18, 24, 14)
+        lay.setSpacing(10)
+
+        lay.addWidget(_label("📝  Yazıya Dök", bold=True, size=14, color=NAV))
+        lay.addWidget(_label(
+            "🔒 Her şey bu bilgisayarda çalışır; ses ve metin dışarı gönderilmez.",
+            size=9, color=TLT))
+
+        # Dosya seçimi + sürükle-bırak
+        frame = _panel_frame()
+        flay = QVBoxLayout(frame)
+        flay.setContentsMargins(16, 12, 16, 12)
+        flay.setSpacing(8)
+        row = QHBoxLayout()
+        self.file_lbl = _label("Dosya seçilmedi — buraya sürükleyip bırakabilirsiniz",
+                               size=10, color=TLT)
+        self.file_lbl.setWordWrap(True)
+        pick = _btn("📂  Dosya Seç", "gold")
+        pick.clicked.connect(self._pick_file)
+        row.addWidget(self.file_lbl, 1)
+        row.addWidget(pick)
+        flay.addLayout(row)
+
+        opt = QHBoxLayout()
+        opt.addWidget(_label("Dil:", size=9, color=TLT))
+        self.lang_combo = QComboBox()
+        for text, code in (("Türkçe", "tr"), ("English", "en"), ("Otomatik algıla", "auto")):
+            self.lang_combo.addItem(text, code)
+        opt.addWidget(self.lang_combo)
+        opt.addSpacing(16)
+        opt.addWidget(_label("Kalite:", size=9, color=TLT))
+        self.q_combo = QComboBox()
+        for name in te.QUALITY_MODELS:
+            self.q_combo.addItem(name)
+        self.q_combo.setCurrentText("Dengeli")
+        self.q_combo.currentTextChanged.connect(self._update_quality_note)
+        opt.addWidget(self.q_combo)
+        opt.addSpacing(16)
+        self.ts_check = QCheckBox("Paragraf başına [SS:DD:SS] zaman damgası")
+        self.ts_check.toggled.connect(self._ts_toggled)
+        opt.addWidget(self.ts_check)
+        opt.addStretch()
+        flay.addLayout(opt)
+        self.q_note = _label("", size=8, color=TLT)
+        self.q_note.setWordWrap(True)
+        flay.addWidget(self.q_note)
+        lay.addWidget(frame)
+        self._update_quality_note()
+
+        # Başlat / İptal + ilerleme
+        run = QHBoxLayout()
+        self.start_btn = _btn("▶  Yazıya Dök", "gold")
+        self.start_btn.setEnabled(False)
+        self.start_btn.clicked.connect(self._start)
+        self.cancel_btn = _btn("⏹  İptal", "navy")
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.clicked.connect(self._cancel)
+        run.addWidget(self.start_btn)
+        run.addWidget(self.cancel_btn)
+        self.prog = QProgressBar()
+        self.prog.setRange(0, 100)
+        self.prog.setFixedHeight(18)
+        run.addWidget(self.prog, 1)
+        self.prog_lbl = _label("", size=9, color=TMID)
+        self.prog_lbl.setMinimumWidth(190)
+        run.addWidget(self.prog_lbl)
+        lay.addLayout(run)
+
+        # Sonuç
+        self.text = QTextEdit()
+        self.text.setPlaceholderText("Yazıya dökülen metin burada görünür; düzenleyebilirsiniz.")
+        self.text.textChanged.connect(self._text_changed)
+        lay.addWidget(self.text, 1)
+
+        btns = QHBoxLayout()
+        copy_b = _btn("📋  Panoya kopyala", "navy")
+        copy_b.clicked.connect(self._copy)
+        txt_b = _btn("💾  .txt kaydet", "navy")
+        txt_b.clicked.connect(lambda: self._save_as(".txt"))
+        docx_b = _btn("💾  .docx kaydet", "navy")
+        docx_b.clicked.connect(lambda: self._save_as(".docx"))
+        srt_b = _btn("💾  .srt kaydet", "navy")
+        srt_b.clicked.connect(lambda: self._save_as(".srt"))
+        open_b = QToolButton()
+        open_b.setText("📂  Şununla aç ▾")
+        open_b.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        open_b.setFixedHeight(30)
+        menu = QMenu(open_b)
+        menu.addAction("Not Defteri", self._open_notepad)
+        menu.addAction("Word (varsayılan program)", self._open_word)
+        menu.addAction("Sözcük", self._open_sozcuk)
+        open_b.setMenu(menu)
+        for b in (copy_b, txt_b, docx_b, srt_b, open_b):
+            btns.addWidget(b)
+        btns.addStretch()
+        lay.addLayout(btns)
+
+    def _update_quality_note(self, *_):
+        import transcribe_engine as te
+        notes = {
+            "Hızlı":   "en hızlı, daha çok hata yapabilir",
+            "Dengeli": "önerilen: hız ve doğruluk dengesi",
+            "Hassas":  "en doğru ama yavaş; işlemcide ses süresinin birkaç katı sürebilir",
+        }
+        name = self.q_combo.currentText()
+        model, _, size = te.QUALITY_MODELS[name]
+        self.q_note.setText(
+            f"{name} ({model}, {size}): {notes[name]}. Model ilk kullanımda bir kez indirilir.")
+
+    # ── Dosya seçimi ──────────────────────────────────────────────────────
+    def _pick_file(self):
+        exts = " ".join(f"*.{e}" for e in TRANSCRIBE_EXTS)
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Ses / video dosyası seç", "",
+            f"Ses ve video ({exts});;Tüm dosyalar (*.*)")
+        if path:
+            self.set_audio(path)
+
+    def set_audio(self, path):
+        if self._runner is not None:
+            QMessageBox.information(self, "Yazıya Dök",
+                "Devam eden bir işlem var. Bitmesini bekleyin ya da iptal edin.")
+            return
+        self._audio = path
+        self.file_lbl.setText(f"🎵  {os.path.basename(path)}")
+        self.file_lbl.setStyleSheet(f"color:{TXT};")
+        self.start_btn.setEnabled(True)
+        self.prog.setValue(0)
+        self.prog_lbl.setText("")
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls() and self._drop_path(e):
+            e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        path = self._drop_path(e)
+        if path:
+            self.set_audio(path)
+
+    def _drop_path(self, e):
+        for u in e.mimeData().urls():
+            f = u.toLocalFile()
+            if f and os.path.splitext(f)[1].lower().lstrip(".") in TRANSCRIBE_EXTS:
+                return f
+        return ""
+
+    # ── Çalıştır / iptal ──────────────────────────────────────────────────
+    def _start(self):
+        if not self._audio or self._runner is not None:
+            return
+        if not os.path.exists(self._audio):
+            QMessageBox.warning(self, "Yazıya Dök", "Dosya bulunamadı.")
+            return
+        self._segments = []
+        self._saved = {}
+        self._dirty = False
+        self._set_text("")
+        self.text.setReadOnly(True)
+        self._dur = 0.0
+        self._t0 = time.time()
+        self.prog.setValue(0)
+        self.prog_lbl.setText("Hazırlanıyor...")
+        self.start_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
+        self.lang_combo.setEnabled(False)
+        self.q_combo.setEnabled(False)
+
+        r = TranscribeRunner(self._audio, self.lang_combo.currentData(),
+                             self.q_combo.currentText())
+        r.status.connect(self._on_status)
+        r.info.connect(self._on_info)
+        r.seg.connect(self._on_seg)
+        r.ended.connect(self._on_ended)
+        self._runner = r
+        r.start()
+
+    def _cancel(self):
+        if self._runner is not None:
+            self.cancel_btn.setEnabled(False)
+            self.prog_lbl.setText("İptal ediliyor...")
+            self._runner.cancel()
+
+    def _on_status(self, msg):
+        self.prog_lbl.setText(msg[:60])
+        self.status_msg.emit(msg)
+
+    def _on_info(self, dur, lang):
+        self._dur = dur
+        self._t0 = time.time()
+        self.status_msg.emit(f"Yazıya dökülüyor (algılanan dil: {lang})")
+
+    def _on_seg(self, s, e, text):
+        self._segments.append((s, e, text))
+        if self._dur > 0:
+            frac = min(1.0, e / self._dur)
+            self.prog.setValue(int(frac * 100))
+            self.progress_val.emit(int(frac * 100))
+            el = time.time() - self._t0
+            if frac > 0.03:
+                rem = el * (1 - frac) / frac
+                self.prog_lbl.setText(f"%{int(frac * 100)} · kalan ~{self._fmt_dur(rem)}")
+            else:
+                self.prog_lbl.setText(f"%{int(frac * 100)}")
+        if not self._render_timer.isActive():
+            self._render_timer.start()
+
+    @staticmethod
+    def _fmt_dur(sec):
+        sec = int(sec)
+        return f"{sec // 3600}:{sec % 3600 // 60:02d}:{sec % 60:02d}" if sec >= 3600 \
+            else f"{sec // 60:02d}:{sec % 60:02d}"
+
+    def _on_ended(self, state, msg):
+        self._runner = None
+        self._render()
+        self.text.setReadOnly(False)
+        self.cancel_btn.setEnabled(False)
+        self.start_btn.setEnabled(bool(self._audio))
+        self.lang_combo.setEnabled(True)
+        self.q_combo.setEnabled(True)
+        n = len(self._segments)
+        if state == "done":
+            self.prog.setValue(100)
+            self.progress_val.emit(100)
+            took = self._fmt_dur(time.time() - self._t0)
+            self.prog_lbl.setText("✅ Tamamlandı" if n else "Konuşma bulunamadı")
+            self.status_msg.emit(f"Yazıya dökme tamamlandı ({took})" if n
+                                 else "Ses içinde konuşma bulunamadı")
+        elif state == "cancelled":
+            self.prog_lbl.setText("⏹ İptal edildi — metin korundu")
+            self.status_msg.emit("Yazıya dökme iptal edildi; o ana kadarki metin korundu")
+        elif state == "net":
+            self.prog_lbl.setText("❌ Model indirilemedi")
+            QMessageBox.warning(
+                self, "Model indirilemedi",
+                "Whisper modeli indirilemedi. İnternet bağlantınızı (ve gerekirse "
+                "Ayarlar'daki proxy'yi) kontrol edip tekrar deneyin.\n"
+                "Model yalnızca ilk kullanımda bir kez indirilir.\n\n" + msg[:300])
+        else:
+            self.prog_lbl.setText("❌ Hata")
+            QMessageBox.critical(self, "Yazıya dökme hatası", msg[:600] or "Bilinmeyen hata")
+
+    # ── Metin alanı ───────────────────────────────────────────────────────
+    def _set_text(self, txt):
+        self._programmatic = True
+        self.text.setPlainText(txt)
+        self._programmatic = False
+
+    def _render(self):
+        import transcribe_engine as te
+        if self._dirty and self._runner is None:
+            return                      # kullanıcı düzenlediyse üzerine yazma
+        self._set_text(te.render_text(self._segments, self.ts_check.isChecked()))
+        if self._runner is not None:
+            sb = self.text.verticalScrollBar()
+            sb.setValue(sb.maximum())
+
+    def _text_changed(self):
+        if not self._programmatic:
+            self._dirty = True
+
+    def _ts_toggled(self, _):
+        if self._runner is None and self._dirty and self._segments:
+            self.status_msg.emit(
+                "Metin elle düzenlendiği için zaman damgası seçeneği yalnızca "
+                "yeni bir yazıya dökmede uygulanır")
+            return
+        self._render()
+
+    # ── Kaydet / kopyala / aç ─────────────────────────────────────────────
+    def _out_dir(self):
+        d = self.get_dirs().get("metin") or DEFAULT_DIRS["metin"]
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _base_name(self):
+        return _sanitize(os.path.splitext(os.path.basename(self._audio))[0]) or "metin"
+
+    def _unique(self, ext):
+        d, base = self._out_dir(), self._base_name()
+        path, i = os.path.join(d, base + ext), 2
+        while os.path.exists(path):
+            path = os.path.join(d, f"{base} ({i}){ext}")
+            i += 1
+        return path
+
+    def _write(self, path):
+        import transcribe_engine as te
+        txt = self.text.toPlainText()
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".docx":
+            te.save_docx(path, txt)
+        elif ext == ".srt":
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(te.render_srt(self._segments))
+        else:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(txt)
+
+    def _has_text(self):
+        if not self.text.toPlainText().strip():
+            QMessageBox.information(self, "Yazıya Dök", "Henüz kaydedilecek metin yok.")
+            return False
+        return True
+
+    def _copy(self):
+        if self._has_text():
+            QApplication.clipboard().setText(self.text.toPlainText())
+            self.status_msg.emit("Metin panoya kopyalandı")
+
+    def _save_as(self, ext):
+        if ext == ".srt":
+            if not self._segments:
+                QMessageBox.information(self, "Yazıya Dök", "Henüz altyazı yok.")
+                return
+        elif not self._has_text():
+            return
+        filt = {".txt": "Metin (*.txt)", ".docx": "Word (*.docx)", ".srt": "Altyazı (*.srt)"}[ext]
+        default = os.path.join(self._out_dir(), self._base_name() + ext)
+        path, _ = QFileDialog.getSaveFileName(self, "Kaydet", default, filt)
+        if not path:
+            return
+        try:
+            self._write(path)
+            self.status_msg.emit(f"Kaydedildi: {os.path.basename(path)}")
+        except Exception as e:
+            QMessageBox.critical(self, "Kaydedilemedi", str(e))
+
+    def _ensure_saved(self, ext):
+        """Bu oturumda tek bir dosya kullan; metin değiştiyse yeniden yaz."""
+        if not self._has_text():
+            return None
+        path = self._saved.get(ext) or self._unique(ext)
+        try:
+            self._write(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Kaydedilemedi", str(e))
+            return None
+        self._saved[ext] = path
+        return path
+
+    def _open_notepad(self):
+        path = self._ensure_saved(".txt")
+        if path:
+            subprocess.Popen(["notepad.exe", path])
+
+    def _open_word(self):
+        path = self._ensure_saved(".docx")
+        if path:
+            try:
+                os.startfile(path)
+            except OSError as e:
+                QMessageBox.warning(self, "Word açılamadı", str(e))
+
+    def _open_sozcuk(self):
+        cfg = self.get_cfg()
+        launcher = cfg.get("sozcuk_path", "")
+        if not launcher or not os.path.exists(launcher):
+            QMessageBox.information(
+                self, "Sözcük yolu",
+                "Sözcük başlatıcısı henüz seçilmemiş. Şimdi Sözcük.bat, main.py "
+                "ya da exe dosyasını seçin (Ayarlar'dan da değiştirebilirsiniz).")
+            launcher, _ = QFileDialog.getOpenFileName(
+                self, "Sözcük başlatıcısını seç", "",
+                "Başlatıcı (*.bat *.cmd *.py *.pyw *.exe);;Tüm dosyalar (*.*)")
+            if not launcher:
+                return
+            cfg["sozcuk_path"] = launcher
+            self.save_cfg_fn(cfg)
+        path = self._ensure_saved(".txt")
+        if not path:
+            return
+        try:
+            _launch_external(launcher, path, cfg.get("sozcuk_python", ""))
+        except Exception as e:
+            QMessageBox.warning(self, "Sözcük açılamadı", str(e))
+
+
 # ── Ayarlar Sekmesi ────────────────────────────────────────────────────────────
 class SettingsTab(QWidget):
     def __init__(self, get_cfg, save_cfg_fn, parent=None):
@@ -3087,6 +3624,37 @@ class SettingsTab(QWidget):
         lay.addWidget(section4)
         self._yt_refresh_label()
 
+        # ── Sözcük Bağlantısı ─────────────────────────────────────────────
+        section5 = self._make_section("📖  Sözcük Bağlantısı  (Yazıya Dök > Şununla aç)")
+        s5lay    = section5.layout()
+        s5lay.addWidget(_label(
+            "Sözcük'ün başlatıcısını seçin (Sözcük.bat, main.py veya exe). "
+            "Metin, kaydedilen dosya yoluyla açılır.",
+            size=9, color=TLT, parent=content))
+        self.sozcuk_edit = QLineEdit(cfg.get("sozcuk_path", ""))
+        self.sozcuk_edit.setPlaceholderText("Seçilmedi")
+        self.sozcuk_py_edit = QLineEdit(cfg.get("sozcuk_python", ""))
+        self.sozcuk_py_edit.setPlaceholderText(
+            "(yalnızca main.py için) python.exe / pythonw.exe — boşsa PATH'ten bulunur")
+        for caption, edit, filt in (
+                ("Başlatıcı:", self.sozcuk_edit,
+                 "Başlatıcı (*.bat *.cmd *.py *.pyw *.exe);;Tüm dosyalar (*.*)"),
+                ("Python:", self.sozcuk_py_edit, "Python (python*.exe);;Tüm dosyalar (*.*)")):
+            r = QHBoxLayout()
+            r.addWidget(_label(caption, size=9, color=TLT, parent=content))
+            edit.setFixedHeight(30)
+            r.addWidget(edit, 1)
+            b = _btn("…", "gold")
+            b.setFixedWidth(36)
+            b.clicked.connect(lambda _, e=edit, f=filt: self._browse_file(e, f))
+            r.addWidget(b)
+            s5lay.addLayout(r)
+        sv = _btn("💾  Sözcük Ayarını Kaydet", "gold")
+        sv.setFixedWidth(210)
+        sv.clicked.connect(self._save_sozcuk)
+        s5lay.addWidget(sv)
+        lay.addWidget(section5)
+
         # ── Kayıt Format Ayarı ────────────────────────────────────────────────
         rec_frame = _panel_frame()
         rec_lay   = QVBoxLayout(rec_frame)
@@ -3140,6 +3708,18 @@ class SettingsTab(QWidget):
 
         lay.addWidget(cache_frame)
         lay.addStretch()
+
+    def _browse_file(self, edit, filt):
+        path, _ = QFileDialog.getOpenFileName(self, "Dosya seç", "", filt)
+        if path:
+            edit.setText(path)
+
+    def _save_sozcuk(self):
+        cfg = self.get_cfg()
+        cfg["sozcuk_path"]   = self.sozcuk_edit.text().strip()
+        cfg["sozcuk_python"] = self.sozcuk_py_edit.text().strip()
+        self.save_cfg_fn(cfg)
+        QMessageBox.information(self, "Kaydedildi", "Sözcük ayarı kaydedildi.")
 
     def _yt_loaded_version(self):
         try:
@@ -3378,6 +3958,7 @@ class MainWindow(QMainWindow):
             ("📥  İndir",     self._make_download_tab),
             ("🔍  Keşfet",    self._make_livestream_tab),
             ("⏺  Kayıt",     self._make_record_tab),
+            ("📝  Yazıya Dök", self._make_transcribe_tab),
             ("⚙  Ayarlar",   self._make_settings_tab),
         ]
 
@@ -3432,7 +4013,19 @@ class MainWindow(QMainWindow):
         w.status_msg.connect(self._set_status)
         w.progress_val.connect(self.main_progress.setValue)
         self._download_tab = w
+        w.transcribe_requested.connect(self._send_to_transcribe)
         return w
+
+    def _make_transcribe_tab(self):
+        w = TranscribeTab(self._get_dirs, self._get_cfg, self._save_cfg)
+        w.status_msg.connect(self._set_status)
+        w.progress_val.connect(self.main_progress.setValue)
+        self._transcribe_tab = w
+        return w
+
+    def _send_to_transcribe(self, path):
+        self._transcribe_tab.set_audio(path)
+        self._switch_tab(self._tab_stack.indexOf(self._transcribe_tab))
 
     def _make_livestream_tab(self):
         w = LiveStreamTab(self._get_dirs)

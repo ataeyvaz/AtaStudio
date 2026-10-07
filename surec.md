@@ -13,17 +13,19 @@ Proje: PyQt6 masaüstü uygulaması (Windows), tek dosya `atastudio.py` (~3350 s
 | İndirici (DownloadTab) | yt-dlp ile 1740+ platform | v5.0'dan beri var | ✅ |
 | Keşfet / gömülü browser | QtWebEngine ile site gezme | Eklendi (f559b5b). Log'da WebEngine önbellek hataları var (aşağıda) | 🟡 |
 | Loopback ses kaydı (RecordTab) | Sistem sesini kaydet, MP3/WAV | Kayıt, süre/isim diyaloğu, floating buton, system tray eklendi | 🟡 MP3 dönüşümü geri açıldı, gerçek kayıtla denenmedi |
+| Yazıya Dök (TranscribeTab) | faster-whisper ile çevrimdışı ses→metin | `transcribe_engine.py` + sekme; kaynaktan test edildi (40 sn Türkçe örnek, iptal, txt/docx/srt, Sözcük .bat) | 🟡 exe'de denenmedi |
 | Canlı yayın (LiveStreamTab) | | Kodda var; kapsamı belirsiz | ❓ |
 | Kurulum paketi | Inno Setup ile Setup.exe | `setup.iss` v6.0, `installer/` içinde v5.0 ve v6.0 Setup.exe mevcut | ✅ |
 
 Son commit: `2a12a0a` (2026-10-07, push edildi) · Testler: yok (otomatik test dosyası bulunmuyor).
 
 ## 2. Sıradaki işler (öncelik sırasıyla)
-0. **Whisper "Yazıya Dök" sekmesi** (`feature/transcribe`): faster-whisper, ayrı süreç, TXT/DOCX/SRT, Sözcük ile aç, İndirici'den tek tık. Ayrıntı için konuşma kararı: dil Türkçe varsayılan, Hızlı/Dengeli/Hassas = base/small/medium.
+0. **Whisper "Yazıya Dök" — kullanıcı testi bekleniyor** (`feature/transcribe` dalı, henüz main'e birleşmedi). Kod hazır ve kaynaktan test edildi; **tam exe build'i yapılmadı**; küçük deneme exe'siyle (konsolsuz, onefile) kendi kendini işçi olarak başlatma + VAD + ctranslate2 doğrulandı. Elle denenecekler: (a) `python build.py` ile build; (b) exe'de Yazıya Dök — model indirme mesajı, ilerleme/ETA, iptal; (c) İndir → bitince "Yazıya Dök" düğmesi; (d) Ayarlar > Sözcük yolu → "Şununla aç > Sözcük"; (e) .docx'i Word'de aç; (f) Ayarlar > yt-dlp Denetle/Güncelle.
+0b. ~~PyQt6 enum hatası~~ — doğrulandı ve düzeltildi: yavaş-model uyarısı (`htdemucs`/`bs_roformer` seçimi) `QMessageBox.Yes` yüzünden AttributeError ile çöküyordu; `StandardButton.Yes/No` yapıldı. Elle de dene.
 1. **Kayıt MP3 dönüşümünü gerçek kayıtla dene** (2026-10-07'de geri açıldı: `_find_ffmpeg()` ile ffmpeg bulunuyor, başarısızsa WAV'a düşüp uyarı veriyor; debug print'ler silindi). Paketli exe'de ffmpeg'in bulunduğunu da doğrula.
 2. ~~ffmpeg yolu~~ — sabit yol kaldırıldı, `_find_ffmpeg()` (exe içi → uygulama klasörü → PATH).
-3. **Sürüm tutarsızlığı:** `APP_VERSION = "6.0"` ama dosya başlığı, `build.py` ve README hâlâ "v5.0". Hepsini 6.0'a çek.
-4. **README'yi güncelle:** loopback kayıt, gömülü browser, floating buton, tray özellikleri README'de yok.
+3. ~~Sürüm tutarsızlığı~~ — dosya başlığı, `build.py`, README 6.0'a çekildi (feature/transcribe dalında).
+4. ~~README~~ — kayıt, Yazıya Dök, yt-dlp güncelleme eklendi; gömülü browser/floating buton ayrıntısı eksik kalabilir.
 5. **CLAUDE.md oluştur** (kalıcı kurallar: dosya yapısı, yasaklar).
 6. WebEngine önbellek hatasını incele (`convert_log.txt`).
 
@@ -45,7 +47,13 @@ Son commit: `2a12a0a` (2026-10-07, push edildi) · Testler: yok (otomatik test d
 - 2026-10-07: Ayarlar'a yt-dlp güncelleme eklendi (Denetle/Güncelle/Sıfırla). Exe'de güncelleme `%APPDATA%\AtaStudio\ytdlp` içine açılır ve gömülü sürümden yeniyse açılışta öne alınır (mini PyInstaller denemesiyle doğrulandı). Kaynaktan çalışırken `pip install -U` kullanılır.
 - 2026-10-07: Whisper (yazıya dök) `feature/transcribe` dalında geliştirilecek; main'e birleştirmeden önce kullanıcı onayı şart. Geri dönüş noktası: `v6.0-oncesi-whisper` etiketi.
 
+- 2026-10-07: Yazıya Dök mimarisi: ağır iş AYRI SÜREÇTE (`atastudio.py --transcribe-worker ...`, exe'de kendi kendini başlatır), düşük öncelik (BELOW_NORMAL), çıktı stdout'ta JSON satırları. Neden: thread önceliği CTranslate2'nin kendi iş parçacıklarını etkilemez, iptal temiz olur, multiprocessing/freeze_support gerekmez.
+- 2026-10-07: İptal kanalı stdin DEĞİL, bayrak dosyası + ana süreç kontrolü. Neden: iş parçacığında `os.read(0)` ile bloke olmak `faster_whisper` import'unu sessizce (çıkış kodu 1) çökertti. Çözüm testle doğrulandı.
+- 2026-10-07: Kalite = Hızlı/Dengeli/Hassas → base/small/medium (beam 1/3/3), dil varsayılan Türkçe, VAD açık, int8, `condition_on_previous_text=False`. Çıktı: txt/docx + ek olarak srt. Metin klasörü: `Documents\Ata Studio\metin`.
+- 2026-10-07: Sözcük yolu ve (yalnızca .py için) Python yolu config'e kaydedilir (`sozcuk_path`, `sozcuk_python`); kişisel yol gömülü değil; exe'de `sys.executable` ASLA Python yerine kullanılmaz.
+
 ## 5. Açık sorular / bekleyenler
+- Exe boyutu: mevcut exe 923 MB; `ctranslate2` (~60 MB) + `av` (~65 MB) eklenir (~+130 MB). Build sonrası `dist/AtaStudio.exe` boyutuna bak.
 - LiveStreamTab'ın amacı ve tamamlanma durumu (belirsiz).
 - Çalışma dizininde bozuk adlı boş dosya var: `C:UsersAtaDesktoprecordtab_dump.txt`. Silinebilir (kullanıcı onayıyla).
 

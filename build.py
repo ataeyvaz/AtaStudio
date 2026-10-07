@@ -14,7 +14,7 @@ def run(cmd, **kw):
 
 def main():
     print("=" * 60)
-    print("  Ata Studio v5.0 — Build Başlıyor")
+    print("  Ata Studio v6.0 — Build Başlıyor")
     print("=" * 60)
 
     # 1. Bağımlılıkları kontrol et
