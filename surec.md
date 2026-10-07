@@ -19,12 +19,14 @@ Proje: PyQt6 masaüstü uygulaması (Windows), tek dosya `atastudio.py` (~3350 s
 Son commit: `main` üzerinde (push edilmedi: GitHub'da son `83fd0ac`) · Testler: yok (otomatik test dosyası bulunmuyor).
 
 ## 2. Sıradaki işler (öncelik sırasıyla)
-0. **Whisper → Sözcük projesine taşınacak** (Ata Studio'dan ÇIKARILDI, kullanıcı kararı). Hazır motor arşivde: `git show whisper-arsiv:transcribe_engine.py` (Qt'siz; ayrı süreç, VAD, int8, paragraf/SRT/DOCX). Sözcük'ün yolu bilinmiyor — kullanıcıdan alınacak. Formatlar: mp3, wav, mp4 + m4a/aac/ogg/opus/flac/webm/mkv/mov/avi (PyAV/FFmpeg hepsini çözer).
+0. ~~Whisper → Sözcük~~ — **yapıldı** (Sözcük 1.4, `C:\Users\Ata\Desktop\sozcuk`, dal `ozellik/dosyadan-yazi`, push edilmedi). Ata Studio'da Whisper YOK. Arşiv: `whisper-arsiv` etiketi. Sözcük'te ses çözücü soundfile: mp3/wav/opus/ogg/flac (mp4/m4a desteklenmez; PyAV'ın FFmpeg'i GPL'li olduğu için kullanılmadı). Ayrıntı: Sözcük `surec.md` (7 Ekim 2026).
+0b. **Paketler hazır (2026-10-07):** `dist\AtaStudio.exe` (929 MB, Whisper'sız `main`, açılışı doğrulandı) ve `installer\AtaStudio_v6.0_Setup.exe` (1039 MB). Eski paket: `installer\AtaStudio_v6.0_Setup_onceki.exe`. Sürüm numarası 6.0 kaldı (Mayıs'taki 6.0 paketinden farklı içerik — istenirse 6.1'e çıkarılır). Kurulum paketi yalnızca derlendi, **kurulup denenmedi**.
+0c. **Uyarı (lisans):** `setup.iss` `ffmpeg.exe/ffprobe.exe/ffplay.exe`'yi kurulum paketine koyuyor; bu derlemeler büyük olasılıkla GPL'li. Kişisel kullanım için sorun değil; geniş dağıtımda kontrol edilmeli (LGPL derleme ya da kullanıcının kendi kurması).
 1. ~~Kayıt MP3~~ — kullanıcı exe'de denedi ✅ (2026-10-07).
 2. ~~ffmpeg yolu~~ — sabit yol kaldırıldı, `_find_ffmpeg()` (exe içi → uygulama klasörü → PATH).
 3. ~~Sürüm tutarsızlığı~~ — başlık, `build.py`, README 6.0'a çekildi.
 4. ~~README~~ — kayıt ve yt-dlp güncelleme eklendi; gömülü browser/floating buton ayrıntısı eksik kalabilir.
-4b. **Exe yeniden build edilmeli:** şu an `dist\AtaStudio.exe` Whisper'lı dalın build'i. Whisper'sız (main) build için `python build.py`; önceki build `installer\AtaStudio_onceki_build.exe`. venv'de faster-whisper/python-docx kurulu kalıyor (zararsız; istenirse `pip uninstall faster-whisper python-docx`).
+4b. ~~Exe yeniden build~~ — yapıldı (bkz. 0b). venv'de faster-whisper/python-docx kurulu kalıyor (zararsız, pakete girmedi; istenirse `pip uninstall faster-whisper python-docx`). Önceki (Whisper'lı dal) build: `installer\AtaStudio_onceki_build.exe` değil, o Mayıs'taki build; Whisper'lı build ezildi (kaynak `whisper-arsiv` etiketinden yeniden üretilebilir).
 4c. Diğer platformlarda (YouTube dışı) indirme denenmedi.
 5. **CLAUDE.md oluştur** (kalıcı kurallar: dosya yapısı, yasaklar).
 6. WebEngine önbellek hatasını incele (`convert_log.txt`).
